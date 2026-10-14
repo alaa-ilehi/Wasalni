@@ -1,0 +1,53 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+class Api <<Flask blueprint>> {
+  +book_seat(ride_id)
+}
+class BookingService {
+  +book_seat(ride_id, passenger) : Booking
+}
+class RideRepository {
+  +create(...) : Ride
+  +get(ride_id) : Ride
+}
+class BookingRepository {
+  +book_seat(ride_id, passenger) : Booking
+  +get(booking_id) : Booking
+}
+class NotificationService <<secondary actor>> {
+  +notify(user, message)
+}
+class Ride {
+  id
+  driver
+  origin
+  destination
+  departure
+  seats_total
+  seats_available
+  price
+}
+class Booking {
+  id
+  ride_id
+  passenger
+  status : PENDING | CONFIRMED | CANCELLED
+  created_at
+}
+class AppError
+class RideFull
+class DuplicateBooking
+class RideNotFound
+class InvalidBooking
+
+Api --> BookingService
+BookingService --> RideRepository
+BookingService --> BookingRepository
+BookingService --> NotificationService
+Ride "1" -- "0..*" Booking
+AppError <|-- RideFull
+AppError <|-- DuplicateBooking
+AppError <|-- RideNotFound
+AppError <|-- InvalidBooking
+@enduml

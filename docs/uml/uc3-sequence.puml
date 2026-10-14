@@ -1,0 +1,43 @@
+@startuml
+title UC3 Book a seat - nominal scenario and alternatives
+actor Passenger
+participant Api
+participant BookingService
+participant RideRepository
+participant BookingRepository
+database SQLite
+participant NotificationService
+
+Passenger -> Api : POST /rides/{id}/bookings (X-User)
+Api -> BookingService : book_seat(ride_id, passenger)
+BookingService -> RideRepository : get(ride_id)
+RideRepository --> BookingService : Ride
+alt ride not found
+  BookingService --> Api : RideNotFound
+  Api --> Passenger : 404
+else passenger is the driver
+  BookingService --> Api : InvalidBooking
+  Api --> Passenger : 400
+else
+  BookingService -> BookingRepository : book_seat(ride_id, passenger)
+  BookingRepository -> SQLite : BEGIN IMMEDIATE
+  BookingRepository -> SQLite : UPDATE rides SET seats_available = seats_available - 1\nWHERE id = ? AND seats_available > 0
+  alt 0 rows updated
+    BookingRepository -> SQLite : ROLLBACK
+    BookingService --> Api : RideFull
+    Api --> Passenger : 409
+  else duplicate active booking
+    BookingRepository -> SQLite : INSERT booking (unique index violated)
+    BookingRepository -> SQLite : ROLLBACK
+    BookingService --> Api : DuplicateBooking
+    Api --> Passenger : 409
+  else seat held
+    BookingRepository -> SQLite : INSERT booking (PENDING)
+    BookingRepository -> SQLite : COMMIT
+    BookingRepository --> BookingService : Booking
+    BookingService -> NotificationService : notify(passenger: pay to confirm)
+    BookingService --> Api : Booking
+    Api --> Passenger : 201 Created (PENDING)
+  end
+end
+@enduml

@@ -1,0 +1,28 @@
+@startuml
+left to right direction
+actor Driver
+actor Passenger
+actor "Payment Service" as Pay
+actor "Notification Service" as Notif
+
+rectangle "Carpooling" {
+  usecase "UC1 Post a ride" as UC1
+  usecase "UC2 Search rides" as UC2
+  usecase "UC3 Book a seat" as UC3
+  usecase "UC4 Pay for a booking" as UC4
+  usecase "UC5 Cancel a booking" as UC5
+  usecase "UC6 Rate the driver" as UC6
+}
+
+Driver --> UC1
+Passenger --> UC2
+Passenger --> UC3
+Passenger --> UC4
+Passenger --> UC5
+Passenger --> UC6
+UC4 --> Pay
+UC3 --> Notif
+UC4 --> Notif
+UC5 --> Notif
+UC4 ..> UC3 : <<precondition: PENDING booking>>
+@enduml
