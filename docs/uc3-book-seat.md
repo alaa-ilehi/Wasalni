@@ -1,32 +1,32 @@
-# UC3 - Book a seat
+# UC3 - Réserver une place
 
-- **Primary actor:** Passenger  **Secondary actor:** Notification service
-- **Preconditions:** the ride exists (user identified by the `X-User` header).
-- **Postconditions (success):** one seat is held; a PENDING booking exists; the passenger is told to pay (UC4).
+- **Acteur principal :** Passager  **Acteur secondaire :** Système de notification
+- **Préconditions :** le trajet existe (l'utilisateur est identifié par l'en-tête `X-User`).
+- **Postconditions (succès) :** une place est retenue ; une réservation `ACTIVE` existe ; le passager est notifié (UC12).
 
-## Nominal scenario
-1. The passenger sends `POST /rides/{id}/bookings`.
-2. The system checks that the ride exists.
-3. The system checks that the passenger is not the driver.
-4. The system atomically decrements `seats_available` (only if > 0) and creates a PENDING booking.
-5. The system notifies the passenger.
-6. The system answers `201 Created`.
+## Scénario nominal
+1. Le passager envoie `POST /rides/{id}/bookings`.
+2. Le système vérifie que le trajet existe.
+3. Le système vérifie que le passager n'est pas le conducteur.
+4. Le système décrémente atomiquement `seats_available` (uniquement si > 0) et crée une réservation `ACTIVE`.
+5. Le système notifie le passager.
+6. Le système répond `201 Created`.
 
-## Alternative scenarios
-| # | Condition | Result |
+## Scénarios alternatifs
+| # | Condition | Résultat |
 |---|---|---|
-| A1 | No identity | `401` |
-| A2 | Ride unknown | `404` |
-| A3 | Passenger is the driver | `400` |
-| A4 | No seat left (including a concurrent request taking the last one) | `409`, nothing written |
-| A5 | Passenger already has an active (PENDING/CONFIRMED) booking on this ride | `409`, seat not consumed |
+| A1 | Aucune identité | `401` |
+| A2 | Trajet inconnu | `404` |
+| A3 | Le passager est le conducteur | `400` |
+| A4 | Plus aucune place (y compris si une requête concurrente prend la dernière) | `409`, rien n'est écrit |
+| A5 | Le passager a déjà une réservation active sur ce trajet | `409`, place non consommée |
 
-## Business rules
-- `seats_available` never goes below 0 (SQL `CHECK` + conditional `UPDATE`).
-- One active booking per passenger and ride (partial unique index).
-- Seat decrement and booking insert happen in one transaction.
+## Règles métier
+- `seats_available` ne descend jamais sous 0 (`CHECK` SQL + `UPDATE` conditionnel).
+- Une seule réservation active par passager et par trajet (index unique partiel).
+- La décrémentation et l'insertion ont lieu dans une seule transaction.
 
 ## Tests
-- Unit (fake repositories): `tests/test_booking_service_unit.py`
-- Integration (nominal scenario): `test_book_seat_nominal_scenario` in `tests/test_booking_api.py`
-- Risk: `tests/test_concurrency.py` (15 parallel requests, 3 seats: exactly 3 succeed)
+- Unitaire (faux dépôts) : `tests/test_booking_service_unit.py`
+- Intégration (scénario nominal) : `test_book_seat_nominal_scenario` dans `tests/test_booking_api.py`
+- Risque : `tests/test_concurrency.py` (15 requêtes parallèles, 3 places : exactement 3 réussissent)
