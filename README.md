@@ -92,3 +92,5 @@ La phase **Inception** (points 1 à 4) a lieu avant l'itération 1.
 | Elaboration | UC3 | `uc3-book-seat` | `v0.1-elaboration` |
 | Construction | UC4, UC1, UC2 | `uc4-pay-booking`, `uc1-post-ride`, `uc2-search-rides` | `v0.2-construction` |
 | Transition | UC5, UC6 | `uc5-cancel-booking`, `uc6-rate-driver` | `v1.0-transition` |
+
+a7la nes gafsa
