@@ -3,7 +3,9 @@ package photos_test
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -156,14 +158,46 @@ func TestNormaliserRefuseUneImageIllisible(t *testing.T) {
 	}
 }
 
-// Le budget de pixels est vérifié sur les dimensions déclarées, avant tout décodage de pixels.
-func TestNormaliserRefuseUneImageTropGrande(t *testing.T) {
-	budget := photos.PixelsMax
-	photos.PixelsMax = 100 // volontairement minuscule : une image 32x32 (1024 pixels) le dépasse
-	t.Cleanup(func() { photos.PixelsMax = budget })
+// bombePNG fabrique une bombe de décompression : 33 octets qui déclarent 20 000 × 20 000 pixels, sans
+// en fournir un seul. Décodée, elle demanderait 1,6 Go (20000*20000*4).
+func bombePNG(t *testing.T) []byte {
+	t.Helper()
+	var ihdr bytes.Buffer
+	for _, valeur := range []uint32{20000, 20000} {
+		if err := binary.Write(&ihdr, binary.BigEndian, valeur); err != nil {
+			t.Fatalf("en-tête : %v", err)
+		}
+	}
+	ihdr.Write([]byte{8, 2, 0, 0, 0}) // 8 bits, RVB, sans filtrage ni entrelacement
 
-	entree := base64.StdEncoding.EncodeToString(bruitPNG(t, 32, 32))
-	if _, err := photos.Normaliser(entree); !errors.Is(err, photos.ErrImageTropGrande) {
+	var png bytes.Buffer
+	png.WriteString("\x89PNG\r\n\x1a\n")
+	chunk := func(nom string, donnees []byte) {
+		if err := binary.Write(&png, binary.BigEndian, uint32(len(donnees))); err != nil {
+			t.Fatalf("longueur du bloc %s : %v", nom, err)
+		}
+		png.WriteString(nom)
+		png.Write(donnees)
+		somme := crc32.NewIEEE()
+		somme.Write([]byte(nom))
+		somme.Write(donnees)
+		if err := binary.Write(&png, binary.BigEndian, somme.Sum32()); err != nil {
+			t.Fatalf("somme de contrôle du bloc %s : %v", nom, err)
+		}
+	}
+	chunk("IHDR", ihdr.Bytes())
+	chunk("IDAT", nil)
+	chunk("IEND", nil)
+	return png.Bytes()
+}
+
+// Le budget de pixels est vérifié sur les dimensions déclarées, avant tout décodage : une bombe de
+// 33 octets est refusée sans qu'un pixel ne soit alloué.
+func TestNormaliserRefuseUneBombeDeDecompression(t *testing.T) {
+	bombe := bombePNG(t)
+	t.Logf("bombe de %d octets déclarant 20000x20000 (1,6 Go une fois décodée)", len(bombe))
+
+	if _, err := photos.Normaliser(base64.StdEncoding.EncodeToString(bombe)); !errors.Is(err, photos.ErrImageTropGrande) {
 		t.Fatalf("erreur = %v, attendu ErrImageTropGrande", err)
 	}
 }

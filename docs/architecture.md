@@ -337,6 +337,12 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   `Profil` (nom requis, bornes de longueur et d'âge, sexe facultatif), le cas d'utilisation `GererProfil` avec un faux
   `ProfilRepository` en mémoire et un faux `NormaliseurPhoto`, le pipeline photo sur des images générées, et l'adaptateur
   SQLite (schéma appliqué deux fois sans erreur, création puis mise à jour).
+- **Tests du pipeline photo** : image de bruit 1400 × 1000 ramenée sous 512 px et sous 512 Kio ; petite image conservée
+  sans agrandissement ; **aller-retour sans perte** (200 × 150 encodée puis relue avec le décodeur du module, toutes les
+  composantes comparées) ; **poids comparé au PNG** sur la même fixture de 512 × 512 (179 256 octets contre 787 545) ;
+  préfixe de data URL accepté ; quatre entrées illisibles refusées ; **bombe de décompression** (57 octets déclarant
+  20 000 × 20 000 pixels) refusée en `ErrImageTropGrande` sans allocation ; refus `ErrImageTropLourde` à 128 px quand
+  même le plus petit palier dépasse le budget (budget de poids surchargé par le test).
 - **Test d'intégration HTTP sur une base temporaire** : le test crée son fichier dans `t.TempDir()`, l'ouvre avec
   `sqlite.Ouvrir`, monte `api.Routes` sur un serveur `httptest` et vérifie le contrat de bout en bout — `401` sans
   en-tête, `400` (nom, âge, image illisible), `201` à la création, `200` à la mise à jour, isolation entre deux valeurs de
@@ -356,7 +362,7 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   donnant exactement trois succès, clé étrangère qui refuse une réservation orpheline, migration qui conserve les
   réservations ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
   conducteur, `404`, `409` complet, `201`, `409` doublon.
-- **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 64 s sur `main`, dont près de 50 s de compilation instrumentée.
+- **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 1 min 40 s sur `main` : la compilation instrumentée (~50 s) et les tests `photos` (~20 s, encodage WebP sans perte sous `-race`) en font l'essentiel.
 
 ## 13. Lancer le service
 

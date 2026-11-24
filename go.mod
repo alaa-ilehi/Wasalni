@@ -2,10 +2,12 @@ module github.com/alaa-ilehi/wasalni
 
 go 1.26.0
 
-require modernc.org/sqlite v1.63.0
+require (
+	github.com/SeriousBug/webp-go-pure v1.2.0
+	modernc.org/sqlite v1.63.0
+)
 
 require (
-	github.com/SeriousBug/webp-go-pure v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
