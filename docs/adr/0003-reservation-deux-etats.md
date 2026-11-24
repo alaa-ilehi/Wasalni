@@ -1,6 +1,6 @@
 # ADR 0003 - Réservation à deux états : ACTIVE ou CANCELLED
 
-- **Statut :** en veille — UC3 (réserver une place) n'est pas implémenté dans le service actuel
+- **Statut :** appliqué — `domain.StatutReservation` et la table `bookings` ne connaissent que ces deux états
 - **Date :** 2026-11-24
 
 ## Contexte

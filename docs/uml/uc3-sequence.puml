@@ -1,0 +1,66 @@
+@startuml uc3-sequence
+title UC3 - Réserver une place (périmètre livré)
+autonumber
+
+actor "Passager" as Passager
+participant "api.Routes\nPOST /rides/{id}/bookings" as API
+participant "application.ReserverPlace" as UC
+participant "domain.TrajetRepository\n(provisoire)" as Trajets
+participant "domain.ReservationRepository\n(sqlite)" as Reservations
+database "bookings\n+ index unique partiel" as DB
+participant "Notifications\n(port Notificateur)" as Notif
+
+Passager -> API : POST /rides/{id}/bookings\nX-User: alice
+API -> API : identite(X-User)
+alt en-tête absent
+  API --> Passager : 401 identité manquante
+end
+
+API -> UC : Executer(trajetId, "alice")
+UC -> Trajets : ParIdentifiant(id)
+alt trajet inconnu
+  Trajets --> UC : ErrTrajetIntrouvable
+  UC --> API : ErrTrajetIntrouvable
+  API --> Passager : 404 trajet introuvable
+else trajet connu
+  Trajets --> UC : Trajet{conducteur, places}
+  alt passager = conducteur
+    UC --> API : ErrConducteurNePeutPasReserver
+    API --> Passager : 400
+  else places = 0
+    UC --> API : ErrTrajetComplet
+    API --> Passager : 409 trajet complet
+  else
+    UC -> Reservations : Reserver(Reservation ACTIVE)
+    Reservations -> DB : BEGIN IMMEDIATE
+    Reservations -> DB : INSERT INTO bookings
+    alt index unique partiel violé
+      DB --> Reservations : SQLITE_CONSTRAINT_UNIQUE
+      Reservations -> DB : ROLLBACK
+      Reservations --> UC : ErrReservationDejaActive
+      UC --> API : ErrReservationDejaActive
+      API --> Passager : 409 réservation déjà active
+    else insertion acceptée
+      DB --> Reservations : created_at
+      Reservations -> DB : COMMIT
+      Reservations --> UC : Reservation{id, ACTIVE}
+      UC -> Notif : NotifierReservation(...)
+      note right of UC
+        Au mieux (ADR 0007) : un échec
+        de notification ne défait pas
+        la réservation déjà validée.
+      end note
+      UC --> API : Reservation
+      API --> Passager : 201 {id, ride_id, passenger, status: ACTIVE, created_at}
+    end
+  end
+end
+
+note over Trajets, DB
+  Différé (ADR 0004) : aucun décrément de places.
+  Le trajet complet n'est refusé que sur la vue Trajet lue ici,
+  sans protection de la dernière place sous concurrence.
+  Le décrément conditionnel arrivera avec la table rides (UC1/UC2).
+end note
+
+@enduml

@@ -16,7 +16,8 @@ hiérarchie de classes portant un attribut de statut.
 - Le domaine déclare ses erreurs comme sentinelles, sans aucune notion de statut HTTP (`internal/domain/profil.go`) :
   `ErrNomRequis`, `ErrNomInvalide`, `ErrAgeInvalide`, `ErrSexeInvalide`, `ErrProfilIntrouvable`. Elles sont enveloppables
   (`fmt.Errorf("… : %w", err)`) et restent reconnaissables par `errors.Is`.
-- L'adaptateur SQLite traduit `sql.ErrNoRows` en `domain.ErrProfilIntrouvable` : le domaine ne connaît pas `database/sql`.
+- L'adaptateur SQLite traduit `sql.ErrNoRows` en `domain.ErrProfilIntrouvable` et la violation de l'index unique des
+  réservations en `domain.ErrReservationDejaActive` : le domaine ne connaît pas `database/sql`.
 - Le pipeline photo déclare ses propres sentinelles, `ErrImageIllisible` et `ErrImageTropLourde`
   (`internal/infrastructure/photos`) ; le cas d'usage les enveloppe en `application.ErrPhotoInvalide`, seule erreur que
   l'adaptateur HTTP connaisse pour une photo refusée.
