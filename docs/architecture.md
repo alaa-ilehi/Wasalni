@@ -2,13 +2,14 @@
 
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
-référence. Seul UC8 (gérer son profil) est implémenté, et les décisions structurantes sont tracées en ADR (§16).
+référence. Trois cas d'utilisation sont implémentés : UC1 (publier un trajet), UC8 (gérer son profil) et UC3 (réserver
+une place), ce dernier sans décrément de places (§15). Les décisions structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Deux sont livrés : UC8 (gérer son profil) et UC3
-  (réserver une place) dans un périmètre réduit — les réservations sont écrites, mais le compteur de places appartient
-  encore à UC1/UC2 (§15).
+- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Trois sont livrés : UC8 (gérer son profil), UC1
+  (publier un trajet) et UC3 (réserver une place). UC3 reste dans un périmètre réduit : les réservations sont écrites,
+  mais le décrément des places n'existe pas encore (§15).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
@@ -64,9 +65,9 @@ Dépendances strictement orientées vers l'intérieur : `api` → `application` 
 
 | Couche | Paquet | Responsabilité | Ne connaît pas |
 |---|---|---|---|
-| Domaine | `internal/domain` | entité `Profil`, type `Sexe`, bornes et invariants (`Profil.Valider`), erreurs sentinelles, **déclaration du port** `ProfilRepository` | `net/http`, `database/sql` |
-| Application | `internal/application` | cas d'utilisation UC8 `GererProfil` (`Consulter`, `Enregistrer`), `SaisieProfil`, port secondaire `NormaliseurPhoto` | HTTP, SQL |
-| Infrastructure | `internal/infrastructure/sqlite`, `internal/infrastructure/photos` | adaptateur du port de persistance (schéma, transactions, horodatages) et pipeline d'image | HTTP |
+| Domaine | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, types énumérés, invariants (`Profil.Valider`, `Trajet.ValiderPublication`, `Reservation.Valider`), erreurs sentinelles, **déclaration des ports** | `net/http`, `database/sql` |
+| Application | `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC3 `ReserverPlace`, saisies d'entrée, ports secondaires `NormaliseurPhoto`, `Notificateur`, `Horloge` | HTTP, SQL |
+| Infrastructure | `internal/infrastructure/sqlite`, `internal/infrastructure/photos`, `internal/infrastructure/notifications` | adaptateurs des ports (schéma, transactions, horodatages), pipeline d'image, journal de notification | HTTP |
 | Interface | `internal/api` | routage, extraction de l'identité, décodage JSON, correspondance erreur → code HTTP | SQL, règles métier |
 | Composition | `cmd/wasalni/main.go` | racine de composition : ouvre la base, câble le cas d'utilisation et le normaliseur, sert HTTP, arrête proprement | — |
 
@@ -90,10 +91,13 @@ Source : [uml/architecture-components.puml](uml/architecture-components.puml).
 Chaîne nominale d'UC8 : `Routes` (`internal/api`) → `GererProfil` (`internal/application`) → port `ProfilRepository`
 → `sqlite.ProfilRepository` → table `users`. La photo traverse `NormaliseurPhoto` → `photos.Normaliser`.
 
-Chaîne nominale d'UC3 : `Routes` → `ReserverPlace` → port `TrajetRepository` (lecture de la vue `Trajet`) puis port
+Chaîne nominale d'UC1 : `Routes` → `PublierTrajet` → port `TrajetRepository` → `sqlite.TrajetRepository` → table
+`rides`. L'heure courante vient du port `Horloge`, la racine de composition fournissant `horlogeReelle`.
+
+Chaîne nominale d'UC3 : `Routes` → `ReserverPlace` → port `TrajetRepository` (lecture du trajet) puis port
 `ReservationRepository` → `sqlite.ReservationRepository` → table `bookings`, sous l'index unique partiel ; enfin le port
-`Notificateur` → `notifications.Journal`. La racine de composition fournit un adaptateur de trajets **provisoire**, qui
-répond `trajet introuvable` pour tout identifiant et l'annonce au démarrage : la table `rides` n'existe pas encore.
+`Notificateur` → `notifications.Journal`. Les deux cas d'utilisation partagent le même entrepôt de trajets, câblé une
+seule fois dans `cmd/wasalni/main.go`.
 
 Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `X-User` et rend `ErrIdentiteManquante` si
 l'en-tête est absent (ADR 0002).
@@ -104,7 +108,8 @@ l'en-tête est absent (ADR 0002).
 |---|---|---|---|
 | `domain.ProfilRepository` | `internal/domain/ports.go` | `Enregistrer(ctx, Profil) (Profil, bool, error)` (le booléen vaut vrai à la création), `ParIdentifiant(ctx, identifiant) (Profil, error)` | `internal/infrastructure/sqlite/profil_repository.go` |
 | `application.NormaliseurPhoto` | `internal/application/gerer_profil.go` | `Normaliser(photoBase64 string) (string, error)` | `internal/infrastructure/photos/pipeline.go` (`Normaliser`), adapté par `normaliseurPhoto` dans `cmd/wasalni/main.go` |
-| `domain.TrajetRepository` | `internal/domain/ports.go` | `ParIdentifiant(ctx, identifiant) (Trajet, error)` | provisoire : `trajetsProvisoires` dans `cmd/wasalni/main.go` (rend `ErrTrajetIntrouvable`) ; la vraie lecture arrive avec UC1/UC2 |
+| `domain.TrajetRepository` | `internal/domain/ports.go` | `Publier(ctx, Trajet) (Trajet, error)` rend le trajet créé, identifiant compris ; `ParIdentifiant(ctx, identifiant) (Trajet, error)` échoue avec `ErrTrajetIntrouvable` | `internal/infrastructure/sqlite/trajet_repository.go` |
+| `application.Horloge` | `internal/application/publier_trajet.go` | `Maintenant() time.Time`, pour que les règles temporelles de UC1 soient testables | `horlogeReelle` dans `cmd/wasalni/main.go` |
 | `domain.ReservationRepository` | `internal/domain/ports.go` | `Reserver(ctx, Reservation) (Reservation, error)` ; échoue avec `ErrReservationDejaActive` si une réservation `ACTIVE` existe pour le couple (trajet, passager). `ParPassager(ctx, passager) ([]Reservation, error)` liste les réservations d'un passager, les deux états compris, de la plus récente à la plus ancienne | `internal/infrastructure/sqlite/reservation_repository.go` |
 | `application.Notificateur` | `internal/application/reserver_place.go` | `NotifierReservation(ctx, Reservation) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
 
@@ -126,6 +131,7 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `GET` | `/health` | — | — | `200` `{"statut":"ok"}` |
 | `GET` | `/profile` | `X-User` requis | — | `200` profil, `401` identité absente, `404` profil introuvable, `500` erreur inattendue |
 | `PUT` | `/profile` | `X-User` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
+| `POST` | `/rides` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `X-User` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` identité absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
 
 Corps de requête (`SaisieProfil`) :
@@ -158,7 +164,21 @@ Réservation (`POST /rides/{id}/bookings`) — aucun corps de requête, l'identi
 {"id":"0f9c…","ride_id":"t1","passenger":"alice","status":"ACTIVE","created_at":"2026-11-24T21:15:48Z"}
 ```
 
-Ordre des contrôles : identité (`401`), trajet connu (`404`), trajet exploitable (`400`), passager distinct du
+Publication (`POST /rides`) — réponse `201` :
+
+```json
+{"id":"46d3…","driver_id":"bob","origin":"Lyon","destination":"Grenoble","departure_time":"2026-12-01T08:30:00Z",
+ "seats_total":3,"seats_available":3,"price":12.5,"cancel_delay_hours":2,"status":"PUBLISHED",
+ "created_at":"2026-11-24T21:35:47Z"}
+```
+
+Règles : origine et destination obligatoires et différentes (comparaison insensible à la casse), au moins une place, prix
+positif ou nul, départ dans le futur au format ISO 8601 (un horodatage sans fuseau est lu en UTC), délai d'annulation
+positif ou nul et strictement inférieur au temps restant avant le départ. Le délai vaut 2 h par défaut, les places
+disponibles partent au maximum, le statut est `PUBLISHED`. Un refus rend `400` avec le motif en clair :
+`{"error":"trajet invalide : l'origine et la destination doivent être différentes"}`.
+
+Ordre des contrôles d'une réservation : identité (`401`), trajet connu (`404`), trajet exploitable (`400`), passager distinct du
 conducteur (`400`), place disponible (`409`), puis écriture ; le doublon éventuel est refusé par l'index unique et rend
 `409`. Aucune place n'est décrémentée dans cette version (§15).
 
@@ -169,7 +189,7 @@ rappelle le décrément différé, il ne doit pas être dessiné comme appliqué
 
 ## 9. Modèle de données
 
-Deux tables, avec le DDL réellement appliqué (`internal/infrastructure/sqlite/schema.go`). Celle de UC8 :
+Trois tables, avec le DDL réellement appliqué (`internal/infrastructure/sqlite/schema.go`). Celle de UC8 :
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -180,6 +200,24 @@ CREATE TABLE IF NOT EXISTS users (
     photo      TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+```
+
+Celle de UC1 :
+
+```sql
+CREATE TABLE IF NOT EXISTS rides (
+    id                 TEXT PRIMARY KEY,
+    driver             TEXT NOT NULL,
+    origin             TEXT NOT NULL,
+    destination        TEXT NOT NULL,
+    departure          TEXT NOT NULL,
+    seats_total        INTEGER NOT NULL CHECK (seats_total >= 1),
+    seats_available    INTEGER NOT NULL CHECK (seats_available >= 0 AND seats_available <= seats_total),
+    price              REAL    NOT NULL CHECK (price >= 0),
+    cancel_delay_hours REAL    NOT NULL DEFAULT 2 CHECK (cancel_delay_hours >= 0),
+    status             TEXT    NOT NULL DEFAULT 'PUBLISHED' CHECK (status IN ('PUBLISHED', 'COMPLETED')),
+    created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 ```
 
@@ -211,12 +249,14 @@ Invariants portés par le schéma ou par le domaine :
   versionnée.
 - `bookings.status` est contraint à `ACTIVE` ou `CANCELLED` (ADR 0003) ; l'index partiel `bookings_active_unique`
   interdit deux réservations `ACTIVE` pour le même couple (trajet, passager), y compris sous appels simultanés.
-- `bookings.ride_id` n'a pas de clé étrangère : la table `rides` appartient à UC1/UC2 et n'existe pas encore. C'est une
-  dette explicite (§15), pas un oubli.
-- Une réservation ne stocke pas le prix ni le nombre de places : le compteur de places est différé avec la table `rides`
-  (ADR 0004).
+- `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` : `COMPLETED` attend UC11.
+- `rides.seats_available` démarre à `seats_total` et **ne bouge pas encore** : le décrément à la réservation est différé
+  (ADR 0004, §15). Un test fixe explicitement cette limite et devra être inversé avec le décrément.
+- `bookings.ride_id` n'a pas de clé étrangère vers `rides`, alors que la table existe désormais : la contrainte viendra
+  avec le décrément atomique, dans la même migration logique (issue de suivi de UC3). Sans elle, la base n'empêche pas
+  une réservation orpheline ; le cas d'usage, lui, lit toujours le trajet avant d'écrire.
 
-Les tables des autres UC (trajets, évaluations) n'existent pas encore : elles seront ajoutées avec les cas
+Les tables des autres UC (évaluations, messages) n'existent pas encore : elles seront ajoutées avec les cas
 d'utilisation correspondants (§14).
 
 ### Modèle de classes (périmètre implémenté)
@@ -287,6 +327,13 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   en-tête, `400` (nom, âge, image illisible), `201` à la création, `200` à la mise à jour, isolation entre deux valeurs de
   `X-User`, `413` au-delà de 10 Mio.
 - **Aucun test ne touche une base réelle** : chaque test crée la sienne et la supprime avec le répertoire temporaire.
+- **Tests d'UC1** : domaine — `ValiderPublication` accepte un trajet complet et refuse douze variantes (conducteur,
+  origine, destination, places incohérentes, prix, délai, départ passé ou à l'instant, statut inconnu) ; cas d'usage —
+  écriture d'un trajet `PUBLISHED` avec places au maximum, délai par défaut ou explicite, alias `departure`, date sans
+  fuseau lue en UTC, huit refus qui n'écrivent rien, erreur de dépôt propagée telle quelle ; adaptateur SQLite — aller-
+  retour `Publier`/`ParIdentifiant`, identifiant inconnu, non-décrément des places après réservation ; HTTP — `401`,
+  cinq `400`, `201` avec la forme exacte de la réponse, puis réservation réelle sur le trajet publié (`201`) et refus du
+  conducteur (`400`).
 - **Tests d'UC3** : cas d'usage avec faux `TrajetRepository`, faux `ReservationRepository` (index unique simulé) et faux
   `Notificateur` — quatre refus, succès, doublon, notification en échec qui ne défait pas la réservation ; adaptateur
   SQLite sur base temporaire — insertion, doublon refusé sans seconde ligne, index partiel qui laisse passer un autre
@@ -320,21 +367,22 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 |---|---|---|---|
 | UC8 | `GererProfil` (`internal/application/gerer_profil.go`) | `ProfilRepository`, `NormaliseurPhoto` | implémenté |
 | UC13 | `identite` (`internal/api/identite.go`) : lecture de `X-User` | — | partiel : l'identité est lue, pas vérifiée (système externe) |
-| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository` (provisoire), `ReservationRepository`, `Notificateur` | implémenté, périmètre réduit : pas de décrément de places (ADR 0004, §15) |
+| UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
+| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté, périmètre réduit : pas de décrément de places (ADR 0004, §15) |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
 | UC1, UC2, UC5, UC6, UC7, UC9, UC10, UC11 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
-- **Pas de compteur de places.** UC3 écrit des réservations mais ne décrémente rien : la table `rides` appartient à
-  UC1/UC2 (#5, #10). Conséquence directe : le refus « trajet complet » s'appuie sur la vue `Trajet` et deux réservations
-  simultanées sur la dernière place peuvent aboutir. Le décrément conditionnel et son test de concurrence sont la dette
-  suivie par l'issue de suivi de #12 ; le contrat du port `ReservationRepository` ne changera pas (ADR 0004).
-- **Adaptateur de trajets provisoire.** `cmd/wasalni/main.go` câble un `TrajetRepository` qui répond `trajet introuvable`
-  pour tout identifiant : `POST /rides/{id}/bookings` renvoie donc `404` en service réel tant que la table `rides`
-  n'existe pas. Le démarrage écrit un avertissement explicite, et les chemins `201`/`400`/`409` sont prouvés en test.
-- **Pas de clé étrangère sur `bookings.ride_id`.** Elle arrivera avec la table référencée ; l'ordre d'écriture n'est donc
-  pas garanti par la base aujourd'hui.
+- **Pas de décrément de places.** La table `rides` existe depuis UC1, mais `seats_available` reste à sa valeur de
+  publication : UC3 écrit des réservations sans toucher au compteur. Conséquence directe : le refus « trajet complet »
+  s'appuie sur la valeur lue et deux réservations simultanées sur la dernière place peuvent aboutir. Le décrément
+  conditionnel et son test de concurrence sont la dette suivie par l'issue de suivi de #12 ; le contrat du port
+  `ReservationRepository` ne changera pas (ADR 0004).
+- **Pas de clé étrangère sur `bookings.ride_id`.** Elle arrivera avec le décrément ; l'ordre d'écriture n'est donc pas
+  garanti par la base aujourd'hui.
+- **UC2 (consulter un trajet) n'a pas d'endpoint.** Le port `ParIdentifiant` existe et sert UC3, mais aucune route ne rend
+  un trajet publié ; c'est la prochaine brique naturelle.
 - **Photos stockées en base.** `users.photo` contient le PNG en base64 : environ un tiers de surcoût par rapport au
   binaire, et l'image entière est relue et retransmise à chaque `GET /profile`. Acceptable pour une photo par profil, à
   revoir quand UC7 lira le profil du conducteur.
@@ -348,8 +396,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
   UC3 ajoutera ses tables.
 - **Coût du pipeline non borné en pixels.** La limite de 10 Mio borne l'entrée, pas le nombre de pixels décodés ni le coût
   du box filter. Une image très grande reste coûteuse en mémoire avant réduction.
-- **Deux UC couverts, deux partiellement.** UC8 est complet ; UC3 l'est sauf le compteur de places ; UC12 n'a qu'un
-  adaptateur de journal. Les autres cas d'utilisation n'ont ni code ni test ; leur place est réservée dans
+- **Trois UC couverts, deux partiellement.** UC8 et UC1 sont complets ; UC3 l'est sauf le compteur de places ; UC12 n'a
+  qu'un adaptateur de journal. Les autres cas d'utilisation n'ont ni code ni test ; leur place est réservée dans
   l'architecture (§14), pas dans le schéma.
 
 ## 16. Décisions (ADR)

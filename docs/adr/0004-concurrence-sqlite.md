@@ -1,20 +1,20 @@
 # ADR 0004 - Concurrence : unicité en base aujourd'hui, décrément atomique différé
 
-- **Statut :** partiellement appliqué — la garantie anti-doublon est en place ; le décrément atomique et son test de
-  concurrence restent à écrire dès que la table `rides` existera (#5, #10)
+- **Statut :** partiellement appliqué — la garantie anti-doublon est en place et la table `rides` existe depuis UC1 ; le
+  décrément atomique, la clé étrangère de `bookings` et le test de concurrence restent à écrire
 - **Date :** 2026-11-24 (révision)
 
 ## Contexte
 
 La réservation concurrente est le risque technique n°1 du projet : plusieurs passagers visent la dernière place au même
-instant. UC3 est livré dans un périmètre réduit : la table `rides` appartient à UC1/UC2, donc le service écrit des
+instant. UC3 est livré dans un périmètre réduit : la table `rides` existe depuis UC1, mais le service écrit des
 réservations sans tenir de compteur de places. Deux courses différentes coexistent alors :
 
 1. **le doublon** — le même passager réserve deux fois le même trajet ;
 2. **la dernière place** — deux passagers différents la prennent en même temps.
 
-La première est arbitrable dès maintenant par la base ; la seconde exige une colonne `seats_available` que le service ne
-possède pas.
+La première est arbitrable dès maintenant par la base ; la seconde exige de décrémenter `rides.seats_available` dans la
+même transaction que l'insertion, ce qui n'est pas encore fait.
 
 ## Décision
 
@@ -30,13 +30,14 @@ possède pas.
 
 **Différé, avec sa raison :**
 
-- Sans table `rides`, il n'y a pas de `seats_available` : le refus « trajet complet » vient de la vue `Trajet` lue par
-  `ReserverPlace`, et ne protège donc pas la dernière place. Deux requêtes simultanées sur la dernière place peuvent
-  aboutir aujourd'hui.
-- Le test de concurrence ne peut pas être écrit sans compteur : il n'y aurait rien à départager.
-- À la livraison de `rides` (#5, #10), la suite est connue et courte : `UPDATE rides SET seats_available =
-  seats_available - 1 WHERE id = ? AND seats_available > 0` dans la **même** transaction immédiate que l'insertion,
-  zéro ligne modifiée ⇒ `domain.ErrTrajetComplet`, puis le test à trois places et trois succès.
+- `rides.seats_available` est écrit à la publication et ne bouge plus : le refus « trajet complet » vient de la valeur
+  lue par `ReserverPlace`, et ne protège donc pas la dernière place. Deux requêtes simultanées sur la dernière place
+  peuvent aboutir aujourd'hui. Un test fixe cette limite et devra être inversé.
+- `bookings.ride_id` n'a pas encore de clé étrangère vers `rides`.
+- La suite est connue et courte : `UPDATE rides SET seats_available = seats_available - 1 WHERE id = ? AND
+  seats_available > 0` dans la **même** transaction immédiate que l'insertion, zéro ligne modifiée ⇒
+  `domain.ErrTrajetComplet`, ajout de la clé étrangère, puis le test à trois places et trois succès. Le tout appartient à
+  l'issue de suivi de #12, pas à un nouveau découpage.
 
 ## Conséquences
 
@@ -44,10 +45,11 @@ possède pas.
   simultanés ; la dernière place reste en revanche exposée à la surréservation.
 - Le port `domain.ReservationRepository` porte déjà le contrat (« échoue avec `ErrReservationDejaActive` »), donc
   l'adaptateur futur n'obligera pas à modifier le cas d'usage.
-- **Négatif assumé :** deux sources de vérité pour « complet » (la vue `Trajet`) et « doublon » (l'index) tant que
-  `rides` n'existe pas. C'est la dette suivie par l'issue de suivi de #12.
+- **Négatif assumé :** deux autorités pour « complet » (la valeur lue dans `rides`) et « doublon » (l'index) tant que le
+  décrément n'existe pas. C'est la dette suivie par l'issue de suivi de #12.
 - **Preuve actuelle :** `internal/infrastructure/sqlite/reservation_repository_test.go` (doublon refusé, aucune seconde
-  ligne écrite ; index partiel qui laisse passer un autre passager) et `internal/api/reservations_test.go` (`409`).
+  ligne écrite ; index partiel qui laisse passer un autre passager), `internal/api/reservations_test.go` (`409`) et
+  `internal/infrastructure/sqlite/trajet_repository_test.go` (les places ne bougent pas après réservation).
 
 ## Alternatives écartées
 
