@@ -11,6 +11,7 @@ from flask import Flask
 from app.api.http import bp
 from app.api.identity import HeaderIdentityProvider
 from app.application.book_seat import BookSeat
+from app.application.publish_ride import PublishRide
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.notifications import RecordingNotifications
 from app.infrastructure.sqlite.booking_repository import SqliteBookingRepository
@@ -28,15 +29,16 @@ class Container:
     notifications: RecordingNotifications
     clock: SystemClock
     identity: HeaderIdentityProvider
+    publish_ride: PublishRide
     book_seat: BookSeat
 
 
-def create_app(db_path: str = "carpooling.db", notifications=None) -> Flask:
+def create_app(db_path: str = "carpooling.db", notifications=None, clock=None) -> Flask:
     database = Database(db_path)
     rides = SqliteRideRepository(database)
     bookings = SqliteBookingRepository(database)
     notifications = notifications or RecordingNotifications()
-    clock = SystemClock()
+    clock = clock if clock is not None else SystemClock()
 
     app = Flask(__name__)
     app.container = Container(
@@ -46,6 +48,7 @@ def create_app(db_path: str = "carpooling.db", notifications=None) -> Flask:
         notifications=notifications,
         clock=clock,
         identity=HeaderIdentityProvider(),
+        publish_ride=PublishRide(rides, clock),
         book_seat=BookSeat(rides, bookings, notifications, clock),
     )
     app.register_blueprint(bp)

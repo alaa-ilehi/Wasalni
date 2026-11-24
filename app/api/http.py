@@ -1,7 +1,7 @@
 """Adaptateur HTTP : routage, identité, correspondance erreur -> code HTTP."""
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from app.application.errors import IdentityMissing
@@ -54,6 +54,13 @@ def handle_unexpected(e: Exception):
         return e.get_response()
     current_app.logger.exception("erreur inattendue")
     return jsonify(error="erreur interne"), 500
+
+
+@bp.post("/rides")
+def publish_ride():
+    ride = current_app.container.publish_ride.execute(
+        current_actor(), request.get_json(silent=True))
+    return jsonify(ride.to_dict()), 201
 
 
 @bp.post("/rides/<int:ride_id>/bookings")
