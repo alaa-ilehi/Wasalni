@@ -3,9 +3,14 @@
 **Énoncé :** cadrage du système « Covoiturage » (voir `enonce.pdf`).
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
+**Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
+**État actuel :** UC8 (gérer son profil) est implémenté et testé. UC3 (réserver une place) est retiré pour l'instant :
+sa fiche [docs/uc3-book-seat.md](docs/uc3-book-seat.md) reste la référence, son implémentation est à refaire. Les tests se
+lancent avec `go test ./...`.
 
-Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan) et
-[docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation).
+Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan),
+[docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation) et
+[docs/architecture.md](docs/architecture.md) (architecture du service Go, ADR, modèle de données).
 
 ---
 
@@ -114,5 +119,7 @@ La phase **Inception** (points 1 à 4) a lieu avant l'itération 1.
 `scripts/elaboration.sh` rejoue les étapes 1 à 4 de la partie 1 avec `git` et `gh`
 (tickets, milestones, tableau de bord, branche `architecture-elaboration`, CI, tag `v0.1-elaboration`).
 `docs/elaboration-manual.md` donne les mêmes étapes à la main.
+
+Le contrôle local est `go vet ./...` puis `go test ./...` ; ce sont les deux commandes que la CI exécute.
 
 a7la nes gafsa

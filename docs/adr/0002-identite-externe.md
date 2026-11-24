@@ -1,37 +1,43 @@
-# ADR 0002 - Identité fournie par un système externe, derrière un port
+# ADR 0002 - Identité fournie par un système externe, lue dans l'adaptateur HTTP
 
-- **Statut :** accepté
+- **Statut :** accepté (révisé lors du portage en Go)
 - **Date :** 2026-11-24
 
 ## Contexte
 
-UC13 (s'authentifier) est délégué à un système d'authentification externe : le système ne stocke aucun mot de passe et
+UC13 (s'authentifier) est délégué à un système d'authentification externe : le service ne stocke aucun mot de passe et
 n'émet aucun jeton. Chaque appel arrive avec l'en-tête `X-User`, renseigné par le client.
 
-L'identité est donc un acteur secondaire externe, au même titre que la notification : elle doit apparaître comme un port
-dans l'architecture, sinon la frontière applicative dépend directement d'un détail de transport.
+L'identité doit rester externe, mais elle traverse la frontière HTTP à chaque requête : il faut décider où elle est lue
+et comment elle parvient au cas d'utilisation.
 
 ## Décision
 
-- **L'identité est un port** : `IdentityProvider.current_actor() -> str`, déclaré dans `app/domain/ports.py`.
-- Son adaptateur vit à la frontière HTTP : `app/api/identity.py`, classe `HeaderIdentityProvider`, qui lit `X-User`
-  et lève `IdentityMissing` si l'en-tête est absent ou vide.
-- L'adaptateur HTTP obtient l'identité par le port puis la passe **explicitement** au cas d'utilisation (`actor`).
-  Aucun objet « utilisateur courant » ne circule dans l'application, et les cas d'utilisation restent testables avec une
-  simple chaîne.
-- Aucune authentification applicative : le système ne vérifie pas la preuve, il transporte une identité de confiance.
+- **L'identité est lue dans l'adaptateur HTTP** : `internal/api/identite.go` expose la constante `EnTeteIdentite`
+  (`X-User`), la fonction `identite(*http.Request) (string, error)` et l'erreur `ErrIdentiteManquante`. L'en-tête est
+  découpé de ses espaces ; vide ou absent, il produit `ErrIdentiteManquante`.
+- **Ce n'est pas un port du domaine.** Un port pour un seul adaptateur, sans second implémentation réelle, serait
+  l'abstraction spéculative que l'ADR 0001 refuse.
+- L'adaptateur HTTP passe l'identité **explicitement** au cas d'utilisation (`Consulter(ctx, identifiant)`,
+  `Enregistrer(ctx, identifiant, saisie)`). Aucun objet « utilisateur courant » ne circule dans l'application, et le cas
+  d'utilisation reste testable avec une simple chaîne.
+- Aucune authentification applicative : le service ne vérifie pas la preuve, il transporte une identité de confiance.
+  L'identifiant reçu devient la clé primaire de `users`, ce qui garantit qu'un appelant n'atteint que sa propre ligne.
 
 ## Conséquences
 
-- **Positif :** la couche `api` dépend d'un contrat du domaine et non d'un en-tête ; remplacer le transport (jeton signé,
-  en-tête différent, passerelle amont) ne touche qu'un adaptateur ; `401` est produit à un seul endroit.
-- **Négatif :** un port pour un seul adaptateur de production (la justification est ici le **système externe** derrière
-  le port, pas le nombre d'implémentations) ; une indirection de plus à lire.
+- **Positif :** `401` est produit à un seul endroit (la table `statutHTTP`), et chaque route se contente d'appeler
+  `identite` ; remplacer le transport (jeton signé, en-tête différent, passerelle amont) ne touche qu'un fichier ; le cas
+  d'utilisation ne connaît ni `http.Request` ni en-tête.
+- **Négatif :** chaque nouvelle route doit penser à appeler `identite` — le compilateur ne l'impose pas.
 - **Limite assumée :** n'importe quel client connaissant un identifiant peut agir en son nom. C'est une hypothèse du
   sujet, pas un oubli ; elle est reprise dans les limites connues de [architecture.md](../architecture.md).
 
 ## Alternatives écartées
 
-- **Lire `X-User` directement dans le routeur** (sans port) : couple la frontière à un détail de transport et duplique la
-  règle du `401` à chaque nouvelle route.
-- **Authentification interne** (mot de passe, session) : réintroduit un cas d'utilisation explicitement retiré du périmètre.
+- **Port `IdentityProvider` déclaré par le domaine** : c'était la forme retenue avant le portage ; avec un seul adaptateur
+  et aucune vérification, l'interface n'apportait qu'une indirection.
+- **Lire `X-User` directement dans chaque gestionnaire** : duplique la règle du `401` et laisse passer un en-tête vide
+  comme un identifiant valide.
+- **Authentification interne** (mot de passe, session) : réintroduit un cas d'utilisation explicitement retiré du
+  périmètre.

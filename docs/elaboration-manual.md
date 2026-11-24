@@ -24,12 +24,12 @@ Sur GitHub :
 ```bash
 git checkout -b architecture-elaboration
 git add docs && git commit -m "docs(uc3): fiche UC, architecture, ADR et vues UML (#1)"
-git add app/__init__.py app/domain app/application app/infrastructure app/api run.py requirements.txt && git commit -m "feat(uc3): architecture en couches et route de réservation de bout en bout (#1)"
-git add tests && git commit -m "test(uc3): tests unitaires, intégration, concurrence (#1)"
-git add .github && git commit -m "ci: lancer pytest"
+git add go.mod go.sum cmd internal && git commit -m "feat(uc8): architecture en couches Go et route de profil de bout en bout (#4)"
+git add .github && git commit -m "ci: lancer go vet et go test"
+go vet ./... && go test ./...
 git push -u origin architecture-elaboration
 ```
-Ouvrir une Pull Request (`Closes #1`), attendre le check vert, puis merger.
+Ouvrir une Pull Request (`Closes #4`), attendre le check vert, puis merger.
 
 ## 4. Tag et fermeture du jalon
 ```bash

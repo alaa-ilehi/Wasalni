@@ -1,32 +1,45 @@
-# ADR 0006 - Erreurs de domaine sans HTTP
+# ADR 0006 - Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur
 
-- **Statut :** accepté
+- **Statut :** accepté (révisé lors du portage en Go)
 - **Date :** 2026-11-24
 
 ## Contexte
 
-Dans le code actuel, chaque erreur métier porte son code HTTP sous forme d'attribut (`class RideFull(AppError): status = 409`).
-Le domaine dépend donc du transport : une même règle ne pourrait pas être réutilisée par une CLI ou un consommateur non HTTP.
+Une erreur métier qui porte son code HTTP oblige le domaine à connaître le transport : la même règle ne pourrait pas être
+réutilisée par une CLI ou un consommateur non HTTP.
+
+En Go, les erreurs sont des valeurs : la forme naturelle est une sentinelle comparable par `errors.Is`, et non une
+hiérarchie de classes portant un attribut de statut.
 
 ## Décision
 
-- `app/domain/errors.py` déclare une hiérarchie `DomainError` (`RideNotFound`, `RideFull`, `DuplicateBooking`,
-  `DriverCannotBook`, `InvalidRide`) **sans aucune notion de statut HTTP**.
-- Les erreurs applicatives (identité absente) vivent dans `app/application/errors.py`.
-- L'adaptateur HTTP porte l'unique table de correspondance erreur → code :
-  `IdentityMissing` 401, `RideNotFound` 404, `RideFull` 409, `DuplicateBooking` 409, `DriverCannotBook` 400,
-  `InvalidRide` 400.
-- Toute autre exception est journalisée et rendue en `500` avec un message générique.
-- Le corps de réponse reste `{"error": "<message>"}`.
+- Le domaine déclare ses erreurs comme sentinelles, sans aucune notion de statut HTTP (`internal/domain/profil.go`) :
+  `ErrNomRequis`, `ErrNomInvalide`, `ErrAgeInvalide`, `ErrSexeInvalide`, `ErrProfilIntrouvable`. Elles sont enveloppables
+  (`fmt.Errorf("… : %w", err)`) et restent reconnaissables par `errors.Is`.
+- L'adaptateur SQLite traduit `sql.ErrNoRows` en `domain.ErrProfilIntrouvable` : le domaine ne connaît pas `database/sql`.
+- Le pipeline photo déclare ses propres sentinelles, `ErrImageIllisible` et `ErrImageTropLourde`
+  (`internal/infrastructure/photos`).
+- L'identité absente est une erreur de l'adaptateur HTTP, `api.ErrIdentiteManquante` : elle n'existe pas dans l'application
+  (ADR 0002).
+- L'adaptateur HTTP porte l'**unique** table de correspondance erreur → code, la fonction `statutHTTP` de
+  `internal/api/http.go` : `401` identité absente, `404` profil introuvable, `400` nom, âge, sexe ou image refusés.
+- Toute autre erreur est journalisée (`log/slog`) et rendue en `500` avec le message générique « erreur interne » ; les
+  erreurs attendues sont rendues avec leur message métier.
+- Le corps de réponse reste `{"error": "<message>"}`. Un corps de requête au-delà de 10 Mio est refusé par
+  `http.MaxBytesReader` en `413` avant d'atteindre la table.
 
 ## Conséquences
 
-- **Positif :** le domaine est transportable ; la politique HTTP est lisible en un seul endroit ; une erreur ajoutée sans
-  correspondance tombe en `500` — visible immédiatement en test plutôt qu'ignorée.
+- **Positif :** le domaine est transportable ; la politique HTTP est lisible en une fonction ; une erreur ajoutée sans
+  correspondance tombe en `500`, visible immédiatement en test plutôt qu'ignorée ; les messages métier restent en français
+  et les codes en un seul endroit.
 - **Négatif :** la table doit être maintenue à la main à chaque nouvelle erreur ; oublier une entrée change le code HTTP.
-- **Garde-fou :** les tests d'intégration couvrent chaque code du contrat (201, 400, 401, 404, 409).
+- **Garde-fou :** les tests d'intégration HTTP couvrent chaque code du contrat (`200`, `201`, `400`, `401`, `404`, `413`).
 
 ## Alternatives écartées
 
-- **Exceptions Werkzeug (`abort`) depuis le service** : couple le métier à Flask.
-- **Codes HTTP portés par le domaine** (statu quo) : simple, mais empêche la réutilisation et brouille la couche.
+- **Une interface `interface{ HTTPStatus() int }` portée par les erreurs** : le domaine dépendrait de `net/http`, et
+  l'enveloppement d'erreurs devrait propager le statut explicitement.
+- **Erreurs typées avec un champ `status`** (forme de l'implémentation Python retirée) : simple, mais empêche la
+  réutilisation et brouille la couche.
+- **`http.Error` dispersé dans les gestionnaires** : duplique la politique et casse l'unicité de la table.
