@@ -1,0 +1,57 @@
+@startuml
+title Wasalni - vue des composants
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+actor "Client\n(interface web FR)" as Client
+
+package "Interface - app/api" {
+  [HttpApi\n(blueprint Flask, erreurs -> HTTP)] as HttpApi
+  [HeaderIdentityProvider] as HeaderIdentity
+}
+
+package "Application - app/application" {
+  [BookSeat\n(cas d'utilisation UC3)] as BookSeat
+}
+
+package "Domaine - app/domain" {
+  [Ride\nBooking BookingStatus] as Entities
+  interface "RideRepository" as IRide
+  interface "BookingRepository" as IBooking
+  interface "NotificationPort" as INotif
+  interface "IdentityProvider" as IIdentity
+  interface "Clock" as IClock
+}
+
+package "Infrastructure - app/infrastructure" {
+  [SqliteRideRepository] as SqlRide
+  [SqliteBookingRepository] as SqlBooking
+  [RecordingNotifications\n(systeme externe simule)] as Notif
+  [SystemClock] as Clock
+}
+
+database "SQLite" as DB
+cloud "Systeme de notification\n(externe)" as ExternalNotif
+cloud "Systeme d'authentification\n(externe)" as ExternalAuth
+
+Client --> HttpApi : HTTP + en-tete X-User
+ExternalAuth ..> Client : identite
+HttpApi --> IIdentity : current_actor()
+HttpApi --> BookSeat : execute(ride_id, actor)
+BookSeat ..> IRide
+BookSeat ..> IBooking
+BookSeat ..> INotif
+BookSeat ..> IClock
+
+IIdentity <|.. HeaderIdentity
+IRide <|.. SqlRide
+IBooking <|.. SqlBooking
+INotif <|.. Notif
+IClock <|.. Clock
+
+SqlRide --> DB
+SqlBooking --> DB
+Notif ..> ExternalNotif : livraison au mieux
+Entities <.. BookSeat : utilise
+@enduml

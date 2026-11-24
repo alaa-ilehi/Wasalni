@@ -23,9 +23,8 @@ Sur GitHub :
 ## 2-3. Diagrammes et architecture de base sur la branche `architecture-elaboration`
 ```bash
 git checkout -b architecture-elaboration
-git add docs/uc3-book-seat.md docs/uml && git commit -m "docs(uc3): fiche UC, diagrammes de classe et de séquence (#1)"
-git add app/errors.py app/db.py app/models.py app/__init__.py run.py requirements.txt && git commit -m "feat(uc3): squelette applicatif et schéma SQLite (#1)"
-git add app/repositories app/services app/controllers && git commit -m "feat(uc3): route de réservation de bout en bout (#1)"
+git add docs && git commit -m "docs(uc3): fiche UC, architecture, ADR et vues UML (#1)"
+git add app/__init__.py app/domain app/application app/infrastructure app/api run.py requirements.txt && git commit -m "feat(uc3): architecture en couches et route de réservation de bout en bout (#1)"
 git add tests && git commit -m "test(uc3): tests unitaires, intégration, concurrence (#1)"
 git add .github && git commit -m "ci: lancer pytest"
 git push -u origin architecture-elaboration

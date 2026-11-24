@@ -17,4 +17,4 @@ def test_no_overbooking_under_concurrency(app):
 
     assert codes.count(201) == seats
     assert codes.count(409) == requests - seats
-    assert app.rides.get(ride_id).seats_available == 0
+    assert app.container.rides.get(ride_id).seats_available == 0

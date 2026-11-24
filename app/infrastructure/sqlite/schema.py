@@ -1,4 +1,8 @@
-import sqlite3
+"""DDL du périmètre implémenté (UC3).
+
+Les tables des UC à venir (users, ratings, colonnes de UC1/UC11) sont décrites, mais non créées,
+dans la section « modèle de données » de docs/architecture.md.
+"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rides (
@@ -18,24 +22,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     status      TEXT    NOT NULL DEFAULT 'ACTIVE',    -- ACTIVE | CANCELLED
     created_at  TEXT    NOT NULL
 );
--- one active booking per passenger and ride
+-- une seule réservation active par passager et par trajet (ADR 0004)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_active_booking
     ON bookings(ride_id, passenger) WHERE status = 'ACTIVE';
 """
-
-
-class Database:
-    """Thin SQLite wrapper. Every call gets its own autocommit connection;
-    transactions are opened explicitly by the repositories (BEGIN IMMEDIATE)."""
-
-    def __init__(self, path):
-        self.path = path
-        conn = self.connect()
-        conn.executescript(SCHEMA)
-        conn.close()
-
-    def connect(self):
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
