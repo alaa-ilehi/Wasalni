@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ProfilRepository : persistance des profils, vue depuis le domaine.
 // Contrat : Enregistrer crée ou remplace le profil de l'identifiant fourni.
@@ -26,6 +29,9 @@ type ReservationRepository interface {
 	Reserver(ctx context.Context, r Reservation) (Reservation, error)
 	// ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne.
 	ParPassager(ctx context.Context, passager string) ([]Reservation, error)
+	// Annuler vérifie propriété, état et échéance, puis passe à CANCELLED et rend la place
+	// dans la même transaction. Une répétition ne modifie ni réservation ni compteur.
+	Annuler(ctx context.Context, identifiant, passager string, maintenant time.Time) (Reservation, error)
 }
 
 // EvaluationRepository : écriture et agrégation des évaluations de UC6.

@@ -1,6 +1,6 @@
 # ADR 0007 - Notification au mieux, sans remise en cause de l'écriture
 
-- **Statut :** appliqué pour UC3 — l'adaptateur se limite à un journal ; le système externe d'UC12 n'existe pas
+- **Statut :** appliqué pour UC3 et UC5 — l'adaptateur se limite à un journal ; le système externe d'UC12 n'existe pas
 - **Date :** 2026-11-24
 
 ## Contexte
@@ -9,7 +9,8 @@ Le système de notification est un acteur secondaire externe (UC12). Il peut êt
 message. Or l'écriture est déjà validée en base au moment où la notification part : si l'échec remontait, l'appelant
 verrait une erreur alors que l'écriture est réellement faite, et rejouer la requête créerait un doublon.
 
-UC3 (réserver une place) émet une notification au passager ; UC8 (gérer son profil) n'en prévoit pas.
+UC3 (réserver une place) et UC5 (annuler une réservation) émettent une notification après l'écriture ; UC8 (gérer son
+profil) n'en prévoit pas. UC5 journalise l'événement pour le passager et le conducteur, sans livraison externe.
 
 ## Décision
 
@@ -23,13 +24,14 @@ Conservée telle quelle, pour la future implémentation de UC12 :
 - Quand il sera écrit, le port sera déclaré par `internal/application` — comme `NormaliseurPhoto` l'est aujourd'hui — et
   non par le domaine, qui n'a aucune raison de connaître un canal de diffusion.
 
-Ces règles ont un code depuis UC3 : le port est déclaré par `internal/application` (`Notificateur`) et
-l'adaptateur `internal/infrastructure/notifications/journal.go` se contente d'écrire une ligne de journal.
+Ces règles ont un code depuis UC3 : le port est déclaré par `internal/application` (`Notificateur`) pour UC3 et par
+`internal/application` (`NotificateurAnnulation`) pour UC5. L'adaptateur `internal/infrastructure/notifications/journal.go`
+se contente d'écrire une ligne de journal.
 
 ## Conséquences
 
-- **Aujourd'hui :** une réservation écrit sa ligne puis notifie dans le journal ; un échec du port laisse la
-  réservation intacte et la réponse HTTP inchangée (test `TestEchecNotificationNeDefaitPasLaReservation`).
+- **Aujourd'hui :** une réservation ou son annulation est validée avant l'événement de journal ; un échec du port laisse
+  l'écriture intacte et la réponse HTTP inchangée (tests UC3 et UC5).
 - **À la réimplémentation :** un incident du système externe ne dégradera ni l'écriture ni le code HTTP ; le comportement
   sera vérifiable en test (un port qui échoue laisse l'écriture intacte et le code de réponse inchangé).
 - **Négatif :** un message peut être perdu sans trace au-delà du journal applicatif ; aucune garantie de livraison.

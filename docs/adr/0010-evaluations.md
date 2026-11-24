@@ -35,8 +35,8 @@ coût d'un `AVG`.
   SQLite (ADR 0005).
 - **Dépendance :** tant que UC11 n'existe pas, l'endpoint est inatteignable en production. Les tests posent directement
   `status = 'COMPLETED'` ; cette dette est documentée dans `docs/architecture.md` §15.
-- **Participation :** en l'absence d'UC5, la présence d'une ligne `bookings` — quel que soit son état — atteste de la
-  participation. UC5 précisera si une réservation annulée doit exclure son passager des évaluations.
+- **Participation :** la présence d'une ligne `bookings` — quel que soit son état — atteste de la participation
+  antérieure. UC5 ne demande pas d'exclure le passager dont la réservation a été annulée.
 
 ## Alternatives écartées
 

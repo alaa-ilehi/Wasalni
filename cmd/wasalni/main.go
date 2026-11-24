@@ -48,11 +48,13 @@ func main() {
 	publierTrajet := application.NouveauPublierTrajet(trajets, horlogeReelle{})
 	rechercherTrajets := application.NouveauRechercherTrajets(trajets)
 	consulterTrajet := application.NouveauConsulterTrajet(trajets, profils, evaluations)
+	notificateur := notifications.NouveauJournal(journal)
 	reserverPlace := application.NouveauReserverPlace(
 		trajets,
 		reservations,
-		notifications.NouveauJournal(journal),
+		notificateur,
 	)
+	annulerReservation := application.NouveauAnnulerReservation(reservations, horlogeReelle{}, notificateur)
 	evaluerParticipant := application.NouveauEvaluerParticipant(trajets, reservations, evaluations)
 
 	serveur := &http.Server{
@@ -63,6 +65,7 @@ func main() {
 			Trajets:      publierTrajet,
 			Details:      consulterTrajet,
 			Reservations: reserverPlace,
+			Annulations:  annulerReservation,
 			Evaluations:  evaluerParticipant,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

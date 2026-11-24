@@ -1,5 +1,5 @@
 @startuml
-title Wasalni - modèle de classes (UC1 publier un trajet, UC8 gérer son profil)
+title Wasalni - modèle de classes (UC1, UC5, UC8)
 
 skinparam classAttributeIconSize 0
 
@@ -13,6 +13,11 @@ package "internal/domain" {
   enum StatutTrajet {
     PUBLISHED
     COMPLETED
+  }
+
+  enum StatutReservation {
+    ACTIVE
+    CANCELLED
   }
 
   class Profil {
@@ -54,6 +59,21 @@ package "internal/domain" {
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
   }
 
+  class Reservation {
+    Identifiant : string
+    Trajet : string
+    Passager : string
+    Statut : StatutReservation
+    CreeLe : time.Time
+    ValiderAnnulation(passager, trajet, maintenant) : error
+  }
+
+  interface ReservationRepository {
+    Reserver(ctx, Reservation) : (Reservation, error)
+    ParPassager(ctx, passager) : ([]Reservation, error)
+    Annuler(ctx, identifiant, passager, maintenant) : (Reservation, error)
+  }
+
   class Erreurs <<sentinelles>> {
     ErrNomRequis
     ErrNomInvalide
@@ -62,6 +82,9 @@ package "internal/domain" {
     ErrProfilIntrouvable
     ErrTrajetInvalide
     ErrTrajetIntrouvable
+    ErrReservationIntrouvable
+    ErrReservationDejaAnnulee
+    ErrAnnulationHorsDelai
   }
 
   note right of Profil
@@ -76,7 +99,7 @@ package "internal/domain" {
     Places = PlacesTotal à la publication
     Prix >= 0, depart strictement futur
     DelaiAnnulation >= 0, defaut 2 h, < temps restant
-    Places non decrementees a la reservation (ADR 0004)
+    Réservation et compteur modifiés dans la même transaction
   end note
 }
 
@@ -125,6 +148,17 @@ package "internal/application" {
     Executer(ctx, conducteur, SaisieTrajet) : (Trajet, error)
   }
 
+  interface NotificateurAnnulation {
+    NotifierAnnulation(ctx, Reservation) : error
+  }
+
+  class AnnulerReservation {
+    reservations : ReservationRepository
+    horloge : Horloge
+    notificateur : NotificateurAnnulation
+    Executer(ctx, passager, reservationID) : (Reservation, error)
+  }
+
   note right of SaisieTrajet
     Clés JSON : origin, destination, departure_time,
     seats_total, price, cancel_delay_hours
@@ -146,6 +180,20 @@ package "internal/infrastructure/sqlite" {
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
   }
+
+  class "ReservationRepository\n(adaptateur SQLite)" as SqliteReservationRepository {
+    db : *sql.DB
+    Reserver(ctx, Reservation) : (Reservation, error)
+    ParPassager(ctx, passager) : ([]Reservation, error)
+    Annuler(ctx, identifiant, passager, maintenant) : (Reservation, error)
+  }
+
+  note right of SqliteReservationRepository
+    BEGIN IMMEDIATE
+    UPDATE bookings.status = CANCELLED
+    UPDATE rides.seats_available += 1
+    COMMIT atomique
+  end note
 
   class Ouverture <<fonctions>> {
     Ouvrir(ctx, chemin) : (*sql.DB, error)
@@ -187,6 +235,7 @@ package "internal/api" {
     GET /rides
     POST /rides
     POST /rides/{id}/bookings
+    DELETE /bookings/{id}
   }
 
   class identite <<fonction>> {
@@ -201,6 +250,12 @@ package "internal/api" {
     En-tête X-User obligatoire
     vide ou absent : ErrIdentiteManquante (401)
   end note
+}
+
+package "internal/infrastructure/notifications" {
+  class Journal {
+    NotifierAnnulation(ctx, Reservation) : error
+  }
 }
 
 package "cmd/wasalni" {
@@ -227,11 +282,17 @@ PublierTrajet ..> TrajetRepository : utilise le port
 PublierTrajet ..> Horloge : utilise le port
 PublierTrajet ..> SaisieTrajet : reçoit
 PublierTrajet ..> Trajet : valide puis publie
+AnnulerReservation ..> ReservationRepository : annule atomiquement
+AnnulerReservation ..> Horloge : lit maintenant
+AnnulerReservation ..> NotificateurAnnulation : notifie au mieux
+AnnulerReservation ..> Reservation : valide l'annulation
 
 ProfilRepository <|.. SqliteProfilRepository
 TrajetRepository <|.. SqliteTrajetRepository
+ReservationRepository <|.. SqliteReservationRepository
 NormaliseurPhoto <|.. normaliseurPhoto
 Horloge <|.. horlogeReelle
+NotificateurAnnulation <|.. Journal
 
 SqliteProfilRepository ..> Ouverture : base ouverte
 SqliteProfilRepository ..> Profil : convertit chaque ligne
@@ -239,12 +300,14 @@ SqliteProfilRepository ..> Erreurs : ErrProfilIntrouvable
 SqliteTrajetRepository ..> Ouverture : base ouverte
 SqliteTrajetRepository ..> Trajet : convertit chaque ligne
 SqliteTrajetRepository ..> Erreurs : ErrTrajetIntrouvable
+SqliteReservationRepository ..> Reservation : lit et change l'état
 normaliseurPhoto ..> Normaliser : délègue
 horlogeReelle ..> Horloge : fournit l'heure UTC
 Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
 
 Routes --> GererProfil : appelle
 Routes --> PublierTrajet : appelle
+Routes --> AnnulerReservation : appelle
 Routes ..> identite : lit X-User
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
@@ -253,7 +316,9 @@ Racine --> SqliteProfilRepository : instancie
 Racine --> SqliteTrajetRepository : instancie une fois,\npartagé par UC1, UC2 et UC3
 Racine --> normaliseurPhoto : instancie
 Racine --> horlogeReelle : instancie
+Racine --> SqliteReservationRepository : instancie
 Racine --> GererProfil : câble
 Racine --> PublierTrajet : câble
+Racine --> AnnulerReservation : câble
 Racine --> Routes : monte le routeur
 @enduml

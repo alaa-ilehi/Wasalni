@@ -74,7 +74,7 @@ func (uc EvaluerParticipant) Executer(
 }
 
 // participe vérifie qu'une réservation existe pour le couple (passager, trajet).
-// UC5 n'est pas livré : les deux états de réservation sont acceptés, la ligne attestant la participation.
+// UC5 n'exclut pas les réservations annulées : la ligne atteste la participation antérieure au trajet.
 func participe(ctx context.Context, depot domain.ReservationRepository, passager, trajetID string) (bool, error) {
 	reservations, err := depot.ParPassager(ctx, passager)
 	if err != nil {
