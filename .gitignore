@@ -1,5 +1,5 @@
 # binaires et couverture
-wasalni
+/wasalni
 *.test
 coverage.out
 
