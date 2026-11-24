@@ -1,57 +1,61 @@
 @startuml
-title Wasalni - vue des composants
+title Wasalni - vue des composants (service Go)
 
 skinparam componentStyle rectangle
 skinparam defaultTextAlignment center
 
-actor "Client\n(interface web FR)" as Client
+actor "Client\n(interface web FR, non livrée)" as Client
 
-package "Interface - app/api" {
-  [HttpApi\n(blueprint Flask, erreurs -> HTTP)] as HttpApi
-  [HeaderIdentityProvider] as HeaderIdentity
+package "cmd/wasalni" {
+  [main\nracine de composition\n-addr / -db, arrêt propre] as Main
 }
 
-package "Application - app/application" {
-  [BookSeat\n(cas d'utilisation UC3)] as BookSeat
+package "internal/api" {
+  [Routes\nGET /health, GET /profile, PUT /profile] as Routes
+  [identité\nen-tête X-User] as Identite
+  [statutHTTP\ntable erreur -> code HTTP] as Statut
 }
 
-package "Domaine - app/domain" {
-  [Ride\nBooking BookingStatus] as Entities
-  interface "RideRepository" as IRide
-  interface "BookingRepository" as IBooking
-  interface "NotificationPort" as INotif
-  interface "IdentityProvider" as IIdentity
-  interface "Clock" as IClock
+package "internal/application" {
+  [GererProfil\n(cas d'utilisation UC8)] as GererProfil
+  interface "NormaliseurPhoto" as INormaliseur
 }
 
-package "Infrastructure - app/infrastructure" {
-  [SqliteRideRepository] as SqlRide
-  [SqliteBookingRepository] as SqlBooking
-  [RecordingNotifications\n(systeme externe simule)] as Notif
-  [SystemClock] as Clock
+package "internal/domain" {
+  [Profil\nSexe, bornes, Valider()] as Profil
+  interface "ProfilRepository" as IProfil
 }
 
-database "SQLite" as DB
-cloud "Systeme de notification\n(externe)" as ExternalNotif
-cloud "Systeme d'authentification\n(externe)" as ExternalAuth
+package "internal/infrastructure/sqlite" {
+  [ProfilRepository\n(adaptateur SQLite)] as SqlProfil
+  [Ouverture\npragmas + schéma idempotent] as Ouverture
+}
 
-Client --> HttpApi : HTTP + en-tete X-User
-ExternalAuth ..> Client : identite
-HttpApi --> IIdentity : current_actor()
-HttpApi --> BookSeat : execute(ride_id, actor)
-BookSeat ..> IRide
-BookSeat ..> IBooking
-BookSeat ..> INotif
-BookSeat ..> IClock
+package "internal/infrastructure/photos" {
+  [Normaliser\nbox filter + PNG sans perte] as Photos
+}
 
-IIdentity <|.. HeaderIdentity
-IRide <|.. SqlRide
-IBooking <|.. SqlBooking
-INotif <|.. Notif
-IClock <|.. Clock
+database "SQLite\n(table users)" as DB
+cloud "Système d'authentification\n(externe)" as ExternalAuth
 
-SqlRide --> DB
-SqlBooking --> DB
-Notif ..> ExternalNotif : livraison au mieux
-Entities <.. BookSeat : utilise
+Client --> Routes : HTTP + en-tête X-User
+ExternalAuth ..> Client : identité
+
+Routes --> Identite : lit l'identité
+Routes --> GererProfil : Consulter / Enregistrer
+Routes ..> Statut : erreurs -> statut
+
+GererProfil ..> IProfil
+GererProfil ..> INormaliseur
+GererProfil ..> Profil : valide
+
+IProfil <|.. SqlProfil
+INormaliseur <|.. Photos
+
+SqlProfil --> DB : lecture / upsert transactionnel
+SqlProfil ..> Ouverture : base ouverte et schéma appliqué
+
+Main --> SqlProfil : instancie
+Main --> GererProfil : câble
+Main --> Routes : monte
 @enduml
