@@ -1,5 +1,4 @@
-// Package notifications : adaptateur du port Notificateur. Le système externe d'UC12 n'existe pas encore :
-// la notification se limite à une trace, l'échec restant sans effet sur la réservation (ADR 0007).
+// Package notifications : les événements sont inscrits au journal en attendant le système externe UC12 (ADR 0007).
 package notifications
 
 import (
@@ -26,5 +25,12 @@ func (j *Journal) NotifierReservation(_ context.Context, reservation domain.Rese
 		"reservation", reservation.Identifiant,
 		"trajet", reservation.Trajet,
 		"passager", reservation.Passager)
+	return nil
+}
+
+func (j *Journal) NotifierFinTrajet(_ context.Context, trajet domain.Trajet) error {
+	j.journal.Info("trajet terminé; notification aux passagers à transmettre par UC12",
+		"trajet", trajet.Identifiant,
+		"conducteur", trajet.Conducteur)
 	return nil
 }

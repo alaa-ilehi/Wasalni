@@ -20,9 +20,11 @@ func statutHTTP(err error) int {
 	case errors.Is(err, domain.ErrProfilIntrouvable),
 		errors.Is(err, domain.ErrTrajetIntrouvable):
 		return http.StatusNotFound
-	case errors.Is(err, domain.ErrNonParticipant):
+	case errors.Is(err, domain.ErrNonParticipant),
+		errors.Is(err, domain.ErrTrajetNonProprietaire):
 		return http.StatusForbidden
 	case errors.Is(err, domain.ErrTrajetComplet),
+		errors.Is(err, domain.ErrTrajetDejaTermine),
 		errors.Is(err, domain.ErrReservationDejaActive),
 		errors.Is(err, domain.ErrTrajetNonTermine),
 		errors.Is(err, domain.ErrEvaluationDejaFaite):

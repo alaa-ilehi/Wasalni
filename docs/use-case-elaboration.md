@@ -148,6 +148,8 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
 
 ## UC11 - Terminer un trajet
 
+Fiche d'implémentation : [uc11-complete-ride.md](uc11-complete-ride.md).
+
 - **Acteur :** Conducteur. **Inclut :** UC12 (notification).
 - **Préconditions :** le trajet existe, appartient au conducteur et n'est pas déjà terminé.
 - **Scénario nominal :**

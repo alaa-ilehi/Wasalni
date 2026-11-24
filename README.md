@@ -4,11 +4,11 @@
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
-**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver) et UC6 (évaluer) sont livrés.
+**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC6 (évaluer) et UC11 (terminer un trajet) sont livrés.
 UC3 consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans surréservation possible
 (ADR 0004) ; `bookings.ride_id` référence `rides(id)`. UC6 enregistre une note par couple sur un trajet terminé et alimente
-`driver.rating` dans UC7 (ADR 0010) ; UC11 n'étant pas livré, la route d'évaluation attend un trajet déjà `COMPLETED` en
-production. La photo de profil est réencodée en **WebP sans perte** de 512 px et 512 Kio au plus, au-delà d'un budget de
+`driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. La photo de profil est
+réencodée en **WebP sans perte** de 512 px et 512 Kio au plus, au-delà d'un budget de
 pixels qui refuse les bombes de décompression (ADR 0008).
 
 Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
@@ -16,7 +16,8 @@ Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go
 Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan),
 [docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation) et
 [docs/architecture.md](docs/architecture.md) (architecture du service Go, ADR, modèle de données),
-[docs/uc3-book-seat.md](docs/uc3-book-seat.md) et [docs/uc6-rate-participants.md](docs/uc6-rate-participants.md).
+[docs/uc3-book-seat.md](docs/uc3-book-seat.md), [docs/uc6-rate-participants.md](docs/uc6-rate-participants.md) et
+[docs/uc11-complete-ride.md](docs/uc11-complete-ride.md).
 
 ---
 

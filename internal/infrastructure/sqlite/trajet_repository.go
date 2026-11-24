@@ -10,7 +10,7 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/domain"
 )
 
-// TrajetRepository : adaptateur SQLite du port domain.TrajetRepository (UC1 et UC3).
+// TrajetRepository : adaptateur SQLite des ports trajet (UC1, UC3, UC7 et UC11).
 type TrajetRepository struct {
 	db *sql.DB
 }
@@ -54,6 +54,48 @@ RETURNING created_at`
 	}
 	trajet.Identifiant = identifiant
 	trajet.CreeLe = horodatage
+	return trajet, nil
+}
+
+// Terminer réalise la transition UC11 une seule fois et uniquement pour le conducteur propriétaire.
+func (r *TrajetRepository) Terminer(ctx context.Context, identifiant, conducteur string) (domain.Trajet, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Trajet{}, fmt.Errorf("début de transaction : %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var trajet domain.Trajet
+	if trajet, err = lireTrajet(tx.QueryRowContext(ctx,
+		"SELECT "+colonnesTrajet+" FROM rides WHERE id = ?", identifiant)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Trajet{}, domain.ErrTrajetIntrouvable
+		}
+		return domain.Trajet{}, fmt.Errorf("lecture du trajet à terminer : %w", err)
+	}
+	if err := trajet.ValiderTerminaison(conducteur); err != nil {
+		return domain.Trajet{}, err
+	}
+
+	resultat, err := tx.ExecContext(ctx,
+		`UPDATE rides SET status = 'COMPLETED' WHERE id = ? AND driver = ? AND status = 'PUBLISHED'`,
+		identifiant, conducteur,
+	)
+	if err != nil {
+		return domain.Trajet{}, fmt.Errorf("terminaison du trajet : %w", err)
+	}
+	modifiees, err := resultat.RowsAffected()
+	if err != nil {
+		return domain.Trajet{}, fmt.Errorf("vérification de la terminaison : %w", err)
+	}
+	if modifiees != 1 {
+		return domain.Trajet{}, domain.ErrTrajetDejaTermine
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Trajet{}, fmt.Errorf("validation de la transaction : %w", err)
+	}
+
+	trajet.Statut = domain.TrajetTermine
 	return trajet, nil
 }
 

@@ -1,12 +1,13 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
 
-// StatutTrajet : deux états, publié puis terminé (UC11 viendra clore un trajet).
+// StatutTrajet : états d'un trajet publiable et terminé par son conducteur (UC11).
 type StatutTrajet string
 
 const (
@@ -14,13 +15,18 @@ const (
 	TrajetTermine StatutTrajet = "COMPLETED"
 )
 
+var (
+	ErrTrajetNonProprietaire = errors.New("le trajet appartient à un autre conducteur")
+	ErrTrajetDejaTermine     = errors.New("le trajet est déjà terminé")
+)
+
 // DureeDelaiAnnulationParDefaut : valeur retenue quand la publication n'en fournit pas (fiche UC1).
 const DureeDelaiAnnulationParDefaut = 2 * time.Hour
 
 // Trajet : un trajet publié par un conducteur (UC1), sur lequel un passager réserve une place (UC3).
 //
-// Places est le compteur encore disponible ; il vaut PlacesTotal à la publication. Son décrément
-// à chaque réservation est différé (ADR 0004), donc il ne bouge pas encore.
+// Places est le compteur encore disponible ; il vaut PlacesTotal à la publication et est mis à jour
+// atomiquement avec chaque réservation.
 type Trajet struct {
 	Identifiant     string
 	Conducteur      string
@@ -38,6 +44,20 @@ type Trajet struct {
 // Valider refuse un trajet inexploitable pour une réservation : ce dont UC3 a besoin, rien de plus.
 func (t Trajet) Valider() error {
 	if t.Identifiant == "" || t.Conducteur == "" {
+		return ErrTrajetInvalide
+	}
+	return nil
+}
+
+// ValiderTerminaison applique les règles UC11 après lecture du trajet.
+func (t Trajet) ValiderTerminaison(conducteur string) error {
+	if t.Conducteur != conducteur {
+		return ErrTrajetNonProprietaire
+	}
+	if t.Statut == TrajetTermine {
+		return ErrTrajetDejaTermine
+	}
+	if t.Statut != TrajetPublie {
 		return ErrTrajetInvalide
 	}
 	return nil

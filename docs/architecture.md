@@ -2,14 +2,14 @@
 
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
-référence. Trois cas d'utilisation sont implémentés : UC1 (publier un trajet), UC8 (gérer son profil) et UC3 (réserver
-une place). Les décisions structurantes sont tracées en ADR (§16).
+référence. Sept cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8 et UC11. Les décisions
+structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Six sont livrés : UC8 (profil), UC1 (publier),
-  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique) et UC6 (évaluer les participants). UC6 exige un
-  trajet terminé, statut que seule la table `rides` porte aujourd'hui (UC11 n'est pas livré).
+- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Sept sont livrés : UC8 (profil), UC1 (publier),
+  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC6 (évaluer les participants) et UC11
+  (terminer un trajet).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
@@ -36,7 +36,7 @@ une place). Les décisions structurantes sont tracées en ADR (§16).
 |---|---|
 | Client (interface web en français, non livrée) | appelle l'API HTTP et transporte l'identité dans l'en-tête `X-User` |
 | Système d'authentification (externe) | émet l'identité ; le service ne stocke aucun mot de passe et n'émet aucun jeton |
-| Système de notification (externe) | recevra la confirmation de réservation ; le service n'a aujourd'hui qu'un adaptateur de journal (ADR 0007) |
+| Système de notification (externe) | recevra les événements de réservation et de fin de trajet ; le service n'a qu'un adaptateur de journal (ADR 0007) |
 | Fichier SQLite | persistance locale : profils (`users`), trajets (`rides`), réservations (`bookings`) |
 
 Le service ne dialogue jamais directement avec un utilisateur : tout passe par l'API. L'identité entre par l'en-tête et
@@ -47,12 +47,12 @@ reste une donnée de confiance (ADR 0002).
 | Conteneur | Contenu | Dépend de |
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
-| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`, `GET /rides`, `GET /rides/{id}`, `POST /rides`, `POST /rides/{id}/bookings`, `POST /rides/{id}/ratings`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
-| `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC7 `ConsulterTrajet`, UC3 `ReserverPlace` et UC6 `EvaluerParticipant` | `internal/domain` |
+| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`, `GET /rides`, `GET /rides/{id}`, `POST /rides`, `POST /rides/{id}/bookings`, `POST /rides/{id}/complete`, `POST /rides/{id}/ratings`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
+| `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC7 `ConsulterTrajet`, UC3 `ReserverPlace`, UC6 `EvaluerParticipant` et UC11 `TerminerTrajet` | `internal/domain` |
 | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, `Evaluation`, règles de validation, erreurs, ports | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
 | `internal/infrastructure/photos` | normalisation de la photo : décodage, réduction, encodage WebP | bibliothèque standard + `webp-go-pure` |
-| `internal/infrastructure/notifications` | adaptateur du port `Notificateur` : une ligne de journal par réservation | `internal/domain`, `log/slog` |
+| `internal/infrastructure/notifications` | adaptateurs `Notificateur` et `NotificateurFinTrajet` : journalisation des événements | `internal/domain`, `log/slog` |
 | Fichier SQLite | tables `users`, `rides`, `bookings`, `ratings` ; clé étrangère `bookings.ride_id → rides(id)` | — |
 
 Il n'y a ni file d'attente, ni cache, ni service tiers dans le chemin d'une requête : un appel HTTP traverse l'adaptateur,
@@ -84,9 +84,7 @@ Règles de dépendance vérifiables à la lecture des imports :
 
 ## 6. Vue des composants
 
-![Composants](uml/architecture-components.png)
-
-Source : [uml/architecture-components.puml](uml/architecture-components.puml).
+Diagramme de composants : [uml/architecture-components.puml](uml/architecture-components.puml).
 
 Chaîne nominale d'UC8 : `Routes` (`internal/api`) → `GererProfil` (`internal/application`) → port `ProfilRepository`
 → `sqlite.ProfilRepository` → table `users`. La photo traverse `NormaliseurPhoto` → `photos.Normaliser`.
@@ -99,6 +97,9 @@ Chaîne nominale d'UC3 : `Routes` → `ReserverPlace` → port `TrajetRepository
 `Notificateur` → `notifications.Journal`. Les deux cas d'utilisation partagent le même entrepôt de trajets, câblé une
 seule fois dans `cmd/wasalni/main.go`.
 
+Chaîne nominale d'UC11 : `Routes` → `TerminerTrajet` → `TrajetFinRepository` → `sqlite.TrajetRepository` → transition
+transactionnelle de `rides.status` vers `COMPLETED`, puis `NotificateurFinTrajet` → `notifications.Journal`.
+
 Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `X-User` et rend `ErrIdentiteManquante` si
 l'en-tête est absent (ADR 0002).
 
@@ -109,9 +110,11 @@ l'en-tête est absent (ADR 0002).
 | `domain.ProfilRepository` | `internal/domain/ports.go` | `Enregistrer(ctx, Profil) (Profil, bool, error)` (le booléen vaut vrai à la création), `ParIdentifiant(ctx, identifiant) (Profil, error)` | `internal/infrastructure/sqlite/profil_repository.go` |
 | `application.NormaliseurPhoto` | `internal/application/gerer_profil.go` | `Normaliser(photoBase64 string) (string, error)` | `internal/infrastructure/photos/pipeline.go` (`Normaliser`), adapté par `normaliseurPhoto` dans `cmd/wasalni/main.go` |
 | `domain.TrajetRepository` | `internal/domain/ports.go` | `Publier(ctx, Trajet) (Trajet, error)` rend le trajet créé, identifiant compris ; `ParIdentifiant(ctx, identifiant) (Trajet, error)` échoue avec `ErrTrajetIntrouvable` | `internal/infrastructure/sqlite/trajet_repository.go` |
+| `domain.TrajetFinRepository` | `internal/domain/ports.go` | `Terminer(ctx, id, conducteur)` effectue une seule transition vers `COMPLETED` | `internal/infrastructure/sqlite/trajet_repository.go` |
 | `application.Horloge` | `internal/application/publier_trajet.go` | `Maintenant() time.Time`, pour que les règles temporelles de UC1 soient testables | `horlogeReelle` dans `cmd/wasalni/main.go` |
 | `domain.ReservationRepository` | `internal/domain/ports.go` | `Reserver(ctx, Reservation) (Reservation, error)` ; échoue avec `ErrReservationDejaActive` si une réservation `ACTIVE` existe pour le couple (trajet, passager). `ParPassager(ctx, passager) ([]Reservation, error)` liste les réservations d'un passager, les deux états compris, de la plus récente à la plus ancienne | `internal/infrastructure/sqlite/reservation_repository.go` |
 | `application.Notificateur` | `internal/application/reserver_place.go` | `NotifierReservation(ctx, Reservation) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
+| `application.NotificateurFinTrajet` | `internal/application/terminer_trajet.go` | `NotifierFinTrajet(ctx, Trajet) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
 
 - `ProfilRepository` est déclaré par le domaine : l'entité `Profil` y vit et le cas d'utilisation en dépend directement.
 - `NormaliseurPhoto` est déclaré par l'application, pas par le domaine : le format d'image est un détail technique, le
@@ -135,6 +138,7 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `GET` | `/rides/{id}` | — | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `404` trajet inconnu ou terminé, `500` erreur inattendue |
 | `POST` | `/rides` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `X-User` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` identité absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
+| `POST` | `/rides/{id}/complete` | `X-User` requis | — | `200` trajet `COMPLETED`, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` déjà terminé, `500` erreur inattendue |
 | `POST` | `/rides/{id}/ratings` | `X-User` requis | `{score, target, comment?}` | `201` évaluation créée, `400` note ou commentaire invalide, `401` identité absente, `403` non participant, `404` trajet inconnu, `409` trajet non terminé ou doublon, `500` erreur inattendue |
 
 Corps de requête (`SaisieProfil`) :
@@ -284,7 +288,7 @@ Invariants portés par le schéma ou par le domaine :
   est stricte, une réservation orpheline fait échouer le démarrage plutôt que disparaître en silence.
 - `bookings.status` est contraint à `ACTIVE` ou `CANCELLED` (ADR 0003) ; l'index partiel `bookings_active_unique`
   interdit deux réservations `ACTIVE` pour le même couple (trajet, passager), y compris sous appels simultanés.
-- `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` : `COMPLETED` attend UC11.
+- `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` ; UC11 effectue la transition irréversible.
 - `rides.seats_available` démarre à `seats_total` et décroît d'une unité par réservation : `UPDATE ... WHERE
   seats_available > 0` qui ne modifie aucune ligne vaut `domain.ErrTrajetComplet` et annule la transaction (ADR 0004).
 - `bookings.ride_id` référence `rides(id)` : une réservation orpheline est refusée par la base, en plus du trajet
@@ -297,12 +301,9 @@ d'utilisation correspondants (§14).
 
 ### Modèle de classes (périmètre implémenté)
 
-![Modèle de classes](uml/class-model.png)
-
-Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** pour UC8 et UC1 : entités
-`Profil` et `Trajet` et leurs bornes, ports `ProfilRepository`, `TrajetRepository`, `NormaliseurPhoto` et `Horloge` avec
-leurs adaptateurs SQLite, photo et horloge réelle, cas d'utilisation `GererProfil` et `PublierTrajet`, adaptateur HTTP.
-La séquence correspondante est en [UC1](uml/uc1-sequence.puml). Le diagramme se maintient avec le code : un diagramme
+Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit les entités, ports, adaptateurs et cas
+d'utilisation livrés pour UC1, UC8 et UC11. Les séquences sont en [UC1](uml/uc1-sequence.puml) et
+[UC11](uml/uc11-sequence.puml). Le diagramme se maintient avec le code : un diagramme
 qui diverge de l'implémentation est un défaut, pas une illustration.
 
 ## 10. Pipeline photo
@@ -391,6 +392,9 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   donnant exactement trois succès, clé étrangère qui refuse une réservation orpheline, migration qui conserve les
   réservations ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
   conducteur, `404`, `409` complet, `201`, `409` doublon.
+- **Tests d'UC11** : domaine — propriétaire et état ; application — identité requise et notification au mieux ; SQLite —
+  propriétaire, identifiant inconnu, transition unique et appels concurrents ; HTTP/SQLite — `200`, `401`, `403`, `404`,
+  `409`, état persisté et échec de notification sans annulation.
 - **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 1 min 40 s sur `main` : la compilation instrumentée (~50 s) et les tests `photos` (~20 s, encodage WebP sans perte sous `-race`) en font l'essentiel.
 
 ## 13. Lancer le service
@@ -424,16 +428,16 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC7 | `ConsulterTrajet` (`internal/application/consulter_trajet.go`) | `TrajetRepository`, `ProfilRepository`, `EvaluationRepository` | implémenté : `GET /rides/{id}` (200/404), note du conducteur issue de UC6 (ADR 0010) |
 | UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté : décrément atomique des places et clé étrangère (ADR 0004) |
 | UC6 | `EvaluerParticipant` (`internal/application/evaluer_participant.go`) | `TrajetRepository`, `ReservationRepository`, `EvaluationRepository` | implémenté : `POST /rides/{id}/ratings`, une note par couple, moyenne lue par UC7 (ADR 0010) |
+| UC11 | `TerminerTrajet` (`internal/application/terminer_trajet.go`) | `TrajetFinRepository`, `NotificateurFinTrajet` | implémenté : `POST /rides/{id}/complete`, transition unique `PUBLISHED` → `COMPLETED` |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
-| UC5, UC9, UC10, UC11 | — | — | non implémentés |
+| UC5, UC9, UC10 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
 - **Annulation absente.** Une réservation `CANCELLED` n'existe que par écriture directe : UC5 n'a ni endpoint ni
   remise en vente de la place, donc `seats_available` ne remonte jamais.
-- **UC6 dépend de UC11.** La route exige un trajet `COMPLETED`, mais UC11 n'existe pas encore pour poser ce statut :
-  `POST /rides/{id}/ratings` n'est donc pas atteignable en production tant que UC11 n'est pas livré. Les tests insèrent
-  directement le statut `COMPLETED` (ADR 0010).
+- **Livraison externe de la fin de trajet absente.** UC11 journalise l'événement après la transition; l'adaptateur de
+  notification aux passagers reste à réaliser par UC12 (ADR 0007).
 - **Photos stockées en base.** `users.photo` contient le WebP en base64 : environ un tiers de surcoût par rapport au
   binaire, et l'image entière est relue et retransmise à chaque `GET /profile` comme dans `GET /rides/{id}`. Acceptable
   pour une photo par profil, à revoir si le volume grandit (ADR 0008).
@@ -448,8 +452,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Six UC couverts.** UC8, UC1, UC2, UC7, UC3 et UC6 ont du code et des tests ; UC13 et UC12 n'ont qu'un adaptateur
-  (identité non vérifiée, journal au lieu d'un système de notification). UC5, UC9, UC10 et UC11 n'ont ni code ni test.
+- **Sept UC couverts.** UC8, UC1, UC2, UC7, UC3, UC6 et UC11 ont du code et des tests ; UC13 et UC12 restent partiels
+  (identité non vérifiée, journal au lieu d'un système de notification). UC5, UC9 et UC10 n'ont ni code ni test.
 
 ## 16. Décisions (ADR)
 
@@ -461,7 +465,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel et décrément conditionnel dans la transaction immédiate | appliqué |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur | accepté |
-| [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 (adaptateur journal) |
+| [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 et UC11 (adaptateur journal) |
 | [0008](adr/0008-photo-profil-webp.md) | Photo de profil en WebP sans perte, 512 px et 512 Kio au plus, budget de pixels | accepté |
 | [0009](adr/0009-choix-go.md) | Go avec `net/http`, `database/sql` et `modernc.org/sqlite` | accepté |
 | [0010](adr/0010-evaluations.md) | Évaluations en table dédiée, moyenne calculée à la lecture et exposée par UC7 | appliqué |

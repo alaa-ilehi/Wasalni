@@ -20,6 +20,7 @@ type Deps struct {
 	Trajets      application.PublierTrajet
 	Details      application.ConsulterTrajet
 	Reservations application.ReserverPlace
+	Terminaisons application.TerminerTrajet
 	Evaluations  application.EvaluerParticipant
 }
 
@@ -35,8 +36,26 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details))
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
+	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons))
 	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations))
 	return mux
+}
+
+// terminerTrajet : POST /rides/{id}/complete, clôt le trajet du conducteur identifié.
+func terminerTrajet(terminer application.TerminerTrajet) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conducteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		trajet, err := terminer.Executer(r.Context(), conducteur, r.PathValue("id"))
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusOK, trajetVersJSON(trajet))
+	}
 }
 
 // profilJSON : représentation publique du profil, en anglais comme le reste du contrat HTTP.

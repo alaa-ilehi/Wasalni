@@ -32,8 +32,8 @@
 
 ## Dépendance
 
-UC11 n'est pas livré : aucun endpoint ne pose encore `COMPLETED`. La route refuse donc tout trajet publié en production ;
-les tests insèrent directement le statut `COMPLETED` pour couvrir UC6 isolément.
+UC11 expose `POST /rides/{id}/complete` pour poser `COMPLETED`. Un trajet publié reste refusé jusqu'à sa terminaison par
+son conducteur ; les tests UC6 conservent aussi des fixtures directement au statut `COMPLETED` pour isoler ce cas.
 
 ## Tests
 

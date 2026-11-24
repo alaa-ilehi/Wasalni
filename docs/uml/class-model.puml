@@ -1,5 +1,5 @@
 @startuml
-title Wasalni - modèle de classes (UC1 publier un trajet, UC8 gérer son profil)
+title Wasalni - modèle de classes (UC1 publier, UC8 profil, UC11 terminer)
 
 skinparam classAttributeIconSize 0
 
@@ -45,6 +45,7 @@ package "internal/domain" {
     CreeLe : time.Time
     Valider() : error
     ValiderPublication(maintenant) : error
+    ValiderTerminaison(conducteur) : error
     ResteAvantDepart(maintenant) : time.Duration
   }
 
@@ -52,6 +53,10 @@ package "internal/domain" {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+  }
+
+  interface TrajetFinRepository {
+    Terminer(ctx, identifiant, conducteur) : (Trajet, error)
   }
 
   class Erreurs <<sentinelles>> {
@@ -62,6 +67,8 @@ package "internal/domain" {
     ErrProfilIntrouvable
     ErrTrajetInvalide
     ErrTrajetIntrouvable
+    ErrTrajetNonProprietaire
+    ErrTrajetDejaTermine
   }
 
   note right of Profil
@@ -76,7 +83,7 @@ package "internal/domain" {
     Places = PlacesTotal à la publication
     Prix >= 0, depart strictement futur
     DelaiAnnulation >= 0, defaut 2 h, < temps restant
-    Places non decrementees a la reservation (ADR 0004)
+    Places consommées atomiquement à la réservation (ADR 0004)
   end note
 }
 
@@ -125,6 +132,16 @@ package "internal/application" {
     Executer(ctx, conducteur, SaisieTrajet) : (Trajet, error)
   }
 
+  interface NotificateurFinTrajet {
+    NotifierFinTrajet(ctx, Trajet) : error
+  }
+
+  class TerminerTrajet {
+    trajets : TrajetFinRepository
+    notificateur : NotificateurFinTrajet
+    Executer(ctx, conducteur, trajetID) : (Trajet, error)
+  }
+
   note right of SaisieTrajet
     Clés JSON : origin, destination, departure_time,
     seats_total, price, cancel_delay_hours
@@ -145,6 +162,7 @@ package "internal/infrastructure/sqlite" {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+    Terminer(ctx, identifiant, conducteur) : (Trajet, error)
   }
 
   class Ouverture <<fonctions>> {
@@ -178,6 +196,12 @@ package "internal/infrastructure/photos" {
   end note
 }
 
+package "internal/infrastructure/notifications" {
+  class Journal {
+    NotifierFinTrajet(ctx, Trajet) : error
+  }
+}
+
 package "internal/api" {
   class Routes <<fonction>> {
     Routes(Deps) : http.Handler
@@ -187,6 +211,7 @@ package "internal/api" {
     GET /rides
     POST /rides
     POST /rides/{id}/bookings
+    POST /rides/{id}/complete
   }
 
   class identite <<fonction>> {
@@ -227,9 +252,14 @@ PublierTrajet ..> TrajetRepository : utilise le port
 PublierTrajet ..> Horloge : utilise le port
 PublierTrajet ..> SaisieTrajet : reçoit
 PublierTrajet ..> Trajet : valide puis publie
+TerminerTrajet ..> TrajetFinRepository : termine le trajet
+TerminerTrajet ..> NotificateurFinTrajet : journalise au mieux
+TerminerTrajet ..> Trajet : valide propriétaire et état
 
 ProfilRepository <|.. SqliteProfilRepository
 TrajetRepository <|.. SqliteTrajetRepository
+TrajetFinRepository <|.. SqliteTrajetRepository
+NotificateurFinTrajet <|.. Journal
 NormaliseurPhoto <|.. normaliseurPhoto
 Horloge <|.. horlogeReelle
 
@@ -245,6 +275,7 @@ Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
 
 Routes --> GererProfil : appelle
 Routes --> PublierTrajet : appelle
+Routes --> TerminerTrajet : appelle
 Routes ..> identite : lit X-User
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
@@ -255,5 +286,6 @@ Racine --> normaliseurPhoto : instancie
 Racine --> horlogeReelle : instancie
 Racine --> GererProfil : câble
 Racine --> PublierTrajet : câble
+Racine --> TerminerTrajet : câble
 Racine --> Routes : monte le routeur
 @enduml
