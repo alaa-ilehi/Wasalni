@@ -1,5 +1,5 @@
 @startuml
-title Wasalni - modèle de classes (périmètre implémenté : UC8 gérer son profil)
+title Wasalni - modèle de classes (UC1 publier un trajet, UC8 gérer son profil)
 
 skinparam classAttributeIconSize 0
 
@@ -8,6 +8,11 @@ package "internal/domain" {
     MALE
     FEMALE
     OTHER
+  }
+
+  enum StatutTrajet {
+    PUBLISHED
+    COMPLETED
   }
 
   class Profil {
@@ -26,12 +31,37 @@ package "internal/domain" {
     ParIdentifiant(ctx, identifiant) : (Profil, error)
   }
 
+  class Trajet {
+    Identifiant : string
+    Conducteur : string
+    Origine : string
+    Destination : string
+    Depart : time.Time
+    PlacesTotal : int
+    Places : int
+    Prix : float64
+    DelaiAnnulation : time.Duration
+    Statut : StatutTrajet
+    CreeLe : time.Time
+    Valider() : error
+    ValiderPublication(maintenant) : error
+    ResteAvantDepart(maintenant) : time.Duration
+  }
+
+  interface TrajetRepository {
+    Publier(ctx, Trajet) : (Trajet, error)
+    ParIdentifiant(ctx, identifiant) : (Trajet, error)
+    Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+  }
+
   class Erreurs <<sentinelles>> {
     ErrNomRequis
     ErrNomInvalide
     ErrAgeInvalide
     ErrSexeInvalide
     ErrProfilIntrouvable
+    ErrTrajetInvalide
+    ErrTrajetIntrouvable
   }
 
   note right of Profil
@@ -39,6 +69,14 @@ package "internal/domain" {
     Age : 18 à 99
     Sexe : MALE, FEMALE, OTHER ou vide
     Photo : base64 d'un PNG déjà normalisé, ou vide
+  end note
+
+  note right of Trajet
+    Origine et destination obligatoires et différentes
+    Places = PlacesTotal à la publication
+    Prix >= 0, depart strictement futur
+    DelaiAnnulation >= 0, defaut 2 h, < temps restant
+    Places non decrementees a la reservation (ADR 0004)
   end note
 }
 
@@ -66,6 +104,33 @@ package "internal/application" {
     Consulter(ctx, identifiant) : (Profil, error)
     Enregistrer(ctx, identifiant, SaisieProfil) : (Profil, bool, error)
   }
+
+  interface Horloge {
+    Maintenant() : time.Time
+  }
+
+  class SaisieTrajet {
+    Origine : string
+    Destination : string
+    Depart : string
+    DepartSecours : string
+    PlacesTotal : int
+    Prix : float64
+    DelaiAnnulation : *float64
+  }
+
+  class PublierTrajet {
+    trajets : TrajetRepository
+    horloge : Horloge
+    Executer(ctx, conducteur, SaisieTrajet) : (Trajet, error)
+  }
+
+  note right of SaisieTrajet
+    Clés JSON : origin, destination, departure_time,
+    seats_total, price, cancel_delay_hours
+    departure = alias de departure_time
+    DelaiAnnulation absent = 2 h par defaut
+  end note
 }
 
 package "internal/infrastructure/sqlite" {
@@ -75,16 +140,29 @@ package "internal/infrastructure/sqlite" {
     ParIdentifiant(ctx, identifiant) : (Profil, error)
   }
 
+  class "TrajetRepository\n(adaptateur SQLite)" as SqliteTrajetRepository {
+    db : *sql.DB
+    Publier(ctx, Trajet) : (Trajet, error)
+    ParIdentifiant(ctx, identifiant) : (Trajet, error)
+    Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+  }
+
   class Ouverture <<fonctions>> {
     Ouvrir(ctx, chemin) : (*sql.DB, error)
     AppliquerSchema(ctx, db) : error
   }
 
+  note right of SqliteTrajetRepository
+    table rides, INSERT … RETURNING created_at
+    CHECK sur places, prix, delai et statut
+    lecture par identifiant et recherche (UC2)
+  end note
+
   note right of Ouverture
     PRAGMA journal_mode = WAL
     PRAGMA busy_timeout = 5000
     PRAGMA foreign_keys = ON
-    table users (CREATE TABLE IF NOT EXISTS)
+    tables users et rides (CREATE TABLE IF NOT EXISTS)
   end note
 }
 
@@ -102,10 +180,13 @@ package "internal/infrastructure/photos" {
 
 package "internal/api" {
   class Routes <<fonction>> {
-    Routes(GererProfil) : http.Handler
+    Routes(Deps) : http.Handler
     GET /health
     GET /profile
     PUT /profile
+    GET /rides
+    POST /rides
+    POST /rides/{id}/bookings
   }
 
   class identite <<fonction>> {
@@ -130,29 +211,49 @@ package "cmd/wasalni" {
   class normaliseurPhoto <<adaptateur>> {
     Normaliser(photoBase64) : (string, error)
   }
+
+  class horlogeReelle <<adaptateur>> {
+    Maintenant() : time.Time
+  }
 }
 
 Profil --> Sexe
+Trajet --> StatutTrajet
 GererProfil ..> ProfilRepository : utilise le port
 GererProfil ..> NormaliseurPhoto : utilise le port
 GererProfil ..> SaisieProfil : reçoit
 GererProfil ..> Profil : valide puis enregistre
+PublierTrajet ..> TrajetRepository : utilise le port
+PublierTrajet ..> Horloge : utilise le port
+PublierTrajet ..> SaisieTrajet : reçoit
+PublierTrajet ..> Trajet : valide puis publie
 
 ProfilRepository <|.. SqliteProfilRepository
+TrajetRepository <|.. SqliteTrajetRepository
 NormaliseurPhoto <|.. normaliseurPhoto
+Horloge <|.. horlogeReelle
 
 SqliteProfilRepository ..> Ouverture : base ouverte
 SqliteProfilRepository ..> Profil : convertit chaque ligne
 SqliteProfilRepository ..> Erreurs : ErrProfilIntrouvable
+SqliteTrajetRepository ..> Ouverture : base ouverte
+SqliteTrajetRepository ..> Trajet : convertit chaque ligne
+SqliteTrajetRepository ..> Erreurs : ErrTrajetIntrouvable
 normaliseurPhoto ..> Normaliser : délègue
+horlogeReelle ..> Horloge : fournit l'heure UTC
 Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
 
 Routes --> GererProfil : appelle
+Routes --> PublierTrajet : appelle
 Routes ..> identite : lit X-User
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
 
 Racine --> SqliteProfilRepository : instancie
+Racine --> SqliteTrajetRepository : instancie une fois,\npartagé par UC1, UC2 et UC3
 Racine --> normaliseurPhoto : instancie
+Racine --> horlogeReelle : instancie
+Racine --> GererProfil : câble
+Racine --> PublierTrajet : câble
 Racine --> Routes : monte le routeur
 @enduml

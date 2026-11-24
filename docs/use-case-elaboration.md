@@ -55,6 +55,7 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
   3. Le système répond `201 Created` avec le trajet.
 - **Scénarios alternatifs :** A1 aucune identité -> `401` ; A2 champs invalides (départ passé, places < 1, `X` < 0) -> `400`.
 - **Règles métier :** `X` est stocké sur le trajet ; l'échéance est `departure - X`. `X = 0` permet d'annuler jusqu'au départ.
+- Feuille détaillée : [uc1-publish-ride.md](uc1-publish-ride.md). Séquence : [uml/uc1-sequence.puml](uml/uc1-sequence.puml).
 
 ## UC2 - Rechercher des trajets
 
