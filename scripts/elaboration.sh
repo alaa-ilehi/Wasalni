@@ -2,7 +2,7 @@
 # TP1 Partie 1 (Elaboration), steps 1 to 4, automated with git + GitHub CLI.
 #   1. repo, board, UC tickets, 4 milestones, one branch per UC, phase tags
 #   2. PlantUML diagrams committed
-#   3. baseline architecture (UC3 end to end) + first test passing in CI
+#   3. baseline architecture (UC8 end to end) + first test passing in CI
 #   4. tag v0.1-elaboration + close the Elaboration milestone
 #
 # Prerequisites: git, GitHub CLI (`gh auth login`; for the board also `gh auth refresh -s project`).
@@ -14,8 +14,8 @@ command -v gh >/dev/null || { echo "Install the GitHub CLI first: https://cli.gi
 gh auth status >/dev/null
 
 echo "== 0. Local check =="
-pip install -r requirements.txt -q
-pytest -q
+go vet ./...
+go test ./...
 
 echo "== 1a. Inception commit on main (vision + use case diagram) =="
 [ -d .git ] || git init -b main
@@ -41,7 +41,7 @@ echo "== 1d. One ticket per UC =="
 ticket() {  # title milestone body -> prints issue number
   gh issue create --title "$1" --milestone "$2" --body "$3" | grep -o '[0-9]*$'
 }
-N3=$(ticket "UC3 Book a seat (technical risk)"          Elaboration  "docs/uc3-book-seat.md - code porté par la branche architecture-elaboration")
+N3=$(ticket "UC3 Book a seat (technical risk)"          Elaboration  "docs/uc3-book-seat.md - fiche de référence ; implémentation retirée, à refaire (ADR 0003/0004 en veille)")
 N1=$(ticket "UC1 Post a ride"                           Construction "branch uc1-post-ride")
 N2=$(ticket "UC2 Search rides"                         Construction "branch uc2-search-rides")
 N7=$(ticket "UC7 View ride details"                    Construction "branch uc7-ride-details")
@@ -74,23 +74,22 @@ git checkout -b architecture-elaboration
 cp /tmp/README.full.md README.md
 git add README.md docs
  git commit -m "docs(uc3): UC sheet, architecture, ADRs and UML views (#$N3)"
-git add app/__init__.py app/domain app/application app/infrastructure app/api run.py requirements.txt
-git commit -m "feat(uc3): layered architecture and book-a-seat route end to end (#$N3)"
-git add tests
-git commit -m "test(uc3): unit, integration and concurrency tests (#$N3)"
+git add go.mod go.sum cmd internal
+git commit -m "feat(uc8): layered architecture and profile route end to end (#$N8)"
 git add .github/workflows/ci.yml
-git commit -m "ci: run pytest on every push and pull request"
+git commit -m "ci: run go vet and go test on every push and pull request"
 git add scripts/elaboration.sh
 git commit -m "chore: add elaboration automation script"
 git push -u origin architecture-elaboration
 
 gh pr create --base main --head architecture-elaboration \
-  --title "UC3 Book a seat (baseline architecture)" \
-  --body "Closes #$N3
+  --title "UC8 Manage profile (baseline architecture)" \
+  --body "Closes #$N8
 
-Baseline architecture running end to end for the risky UC: controller -> service -> repository -> SQLite.
-- atomic seat decrement (conditional UPDATE in one transaction)
-- unit tests, integration test of the nominal scenario, concurrency test
+Baseline architecture running end to end for the first UC: HTTP adapter -> use case -> SQLite.
+- GET /profile and PUT /profile behind the trusted X-User header
+- lossless PNG photo pipeline (512 px, 512 KiB at most)
+- unit tests and HTTP integration test on a temporary database
 - CI must be green before merge"
 
 echo "   waiting for CI..."
@@ -101,7 +100,7 @@ gh pr merge architecture-elaboration --merge --delete-branch
 echo "== 4. Tag v0.1-elaboration and close the milestone =="
 git checkout main
 git pull origin main
-git tag -a v0.1-elaboration -m "Baseline architecture running: UC3 end to end, CI green"
+git tag -a v0.1-elaboration -m "Baseline architecture running: UC8 end to end, CI green"
 git push origin v0.1-elaboration
 gh api -X PATCH "repos/$R/milestones/$(gh api "repos/$R/milestones?state=all" --jq '.[] | select(.title=="Elaboration") | .number')" \
   -f state=closed >/dev/null

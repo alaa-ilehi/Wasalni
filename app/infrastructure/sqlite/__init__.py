@@ -1,1 +1,0 @@
-"""Adaptateurs de persistance SQLite."""

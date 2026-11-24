@@ -1,5 +1,13 @@
-__pycache__/
-*.pyc
-.pytest_cache/
+# binaires et couverture
+/wasalni
+*.test
+coverage.out
+
+# base locale
 *.db
+*.db-shm
+*.db-wal
+
+# environnement local (hérité, non versionné)
 .venv/
+.pi/

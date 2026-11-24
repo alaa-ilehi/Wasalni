@@ -1,124 +1,158 @@
 @startuml
-title Wasalni - modele de classes (perimetre implemente : UC3)
+title Wasalni - modèle de classes (périmètre implémenté : UC8 gérer son profil)
 
 skinparam classAttributeIconSize 0
 
-package "app/domain" {
-  class Ride {
-    id : int
-    driver : str
-    origin : str
-    destination : str
-    departure : str
-    seats_total : int
-    seats_available : int
-    price : float
-    to_dict() : dict
+package "internal/domain" {
+  enum Sexe {
+    MALE
+    FEMALE
+    OTHER
   }
 
-  enum BookingStatus {
-    ACTIVE
-    CANCELLED
+  class Profil {
+    Identifiant : string
+    Nom : string
+    Age : int
+    Sexe : Sexe
+    Photo : string
+    CreeLe : time.Time
+    MajLe : time.Time
+    Valider() : error
   }
 
-  class Booking {
-    id : int
-    ride_id : int
-    passenger : str
-    status : BookingStatus
-    created_at : str
-    to_dict() : dict
+  interface ProfilRepository {
+    Enregistrer(ctx, Profil) : (Profil, bool, error)
+    ParIdentifiant(ctx, identifiant) : (Profil, error)
   }
 
-  class DomainError {
-    message : str
-  }
-  class RideNotFound
-  class RideFull
-  class DuplicateBooking
-  class DriverCannotBook
-  class InvalidRide
-
-  interface RideRepository {
-    create(driver, origin, destination, departure, seats, price) : Ride
-    get(ride_id) : Ride | None
+  class Erreurs <<sentinelles>> {
+    ErrNomRequis
+    ErrNomInvalide
+    ErrAgeInvalide
+    ErrSexeInvalide
+    ErrProfilIntrouvable
   }
 
-  interface BookingRepository {
-    book_seat(ride_id, passenger, created_at) : Booking
-    get(booking_id) : Booking | None
-  }
-
-  interface NotificationPort {
-    send(recipient, message, event_type)
-  }
-
-  interface Clock {
-    now() : str
-  }
-
-  interface IdentityProvider {
-    current_actor() : str
-  }
-
-  DomainError <|-- RideNotFound
-  DomainError <|-- RideFull
-  DomainError <|-- DuplicateBooking
-  DomainError <|-- DriverCannotBook
-  DomainError <|-- InvalidRide
-  Ride --> Booking : 1..*
-  Booking --> BookingStatus
+  note right of Profil
+    Nom : 2 à 80 caractères, espaces retirés
+    Age : 18 à 99
+    Sexe : MALE, FEMALE, OTHER ou vide
+    Photo : base64 d'un PNG déjà normalisé, ou vide
+  end note
 }
 
-package "app/application" {
-  class ApplicationError {
-    message : str
+package "internal/application" {
+  interface NormaliseurPhoto {
+    Normaliser(photoBase64) : (string, error)
   }
-  class IdentityMissing
-  ApplicationError <|-- IdentityMissing
 
-  class BookSeat {
-    rides : RideRepository
-    bookings : BookingRepository
-    notifications : NotificationPort
-    clock : Clock
-    execute(ride_id, actor) : Booking
-    _notify(actor, message)
+  class SaisieProfil {
+    Nom : string
+    Age : int
+    Sexe : string
+    Photo : *string
+  }
+
+  note right of SaisieProfil
+    Photo absent (nil) : la photo existante est conservée
+    Photo "" : la photo est effacée
+    sinon : la valeur est normalisée
+  end note
+
+  class GererProfil {
+    profils : ProfilRepository
+    photos : NormaliseurPhoto
+    Consulter(ctx, identifiant) : (Profil, error)
+    Enregistrer(ctx, identifiant, SaisieProfil) : (Profil, bool, error)
   }
 }
 
-package "app/infrastructure" {
-  class SqliteRideRepository
-  class SqliteBookingRepository
-  class RecordingNotifications {
-    sent : list
+package "internal/infrastructure/sqlite" {
+  class "ProfilRepository\n(adaptateur SQLite)" as SqliteProfilRepository {
+    db : *sql.DB
+    Enregistrer(ctx, Profil) : (Profil, bool, error)
+    ParIdentifiant(ctx, identifiant) : (Profil, error)
   }
-  class SystemClock
+
+  class Ouverture <<fonctions>> {
+    Ouvrir(ctx, chemin) : (*sql.DB, error)
+    AppliquerSchema(ctx, db) : error
+  }
+
+  note right of Ouverture
+    PRAGMA journal_mode = WAL
+    PRAGMA busy_timeout = 5000
+    PRAGMA foreign_keys = ON
+    table users (CREATE TABLE IF NOT EXISTS)
+  end note
 }
 
-package "app/api" {
-  class HeaderIdentityProvider {
-    current_actor() : str
+package "internal/infrastructure/photos" {
+  class Normaliser <<fonction>> {
+    Normaliser(photoBase64) : (string, error)
   }
-  class HttpApi {
-    POST /rides/{id}/bookings
-    + table erreur -> code HTTP
+
+  note right of Normaliser
+    CoteMax 512 px, CoteMin 128 px, PasReduction 64 px
+    PoidsMax 512 Kio
+    PNG sans perte (png.BestCompression), box filter maison
+  end note
+}
+
+package "internal/api" {
+  class Routes <<fonction>> {
+    Routes(GererProfil) : http.Handler
+    GET /health
+    GET /profile
+    PUT /profile
+  }
+
+  class identite <<fonction>> {
+    identite(*http.Request) : (string, error)
+  }
+
+  class statutHTTP <<table unique>> {
+    statutHTTP(error) : int
+  }
+
+  note right of identite
+    En-tête X-User obligatoire
+    vide ou absent : ErrIdentiteManquante (401)
+  end note
+}
+
+package "cmd/wasalni" {
+  class Racine <<main : composition>> {
+    -addr, -db / WASALNI_ADDR, WASALNI_DB
+  }
+
+  class normaliseurPhoto <<adaptateur>> {
+    Normaliser(photoBase64) : (string, error)
   }
 }
 
-RideRepository <|.. SqliteRideRepository
-BookingRepository <|.. SqliteBookingRepository
-NotificationPort <|.. RecordingNotifications
-Clock <|.. SystemClock
-IdentityProvider <|.. HeaderIdentityProvider
+Profil --> Sexe
+GererProfil ..> ProfilRepository : utilise le port
+GererProfil ..> NormaliseurPhoto : utilise le port
+GererProfil ..> SaisieProfil : reçoit
+GererProfil ..> Profil : valide puis enregistre
 
-BookSeat ..> RideRepository
-BookSeat ..> BookingRepository
-BookSeat ..> NotificationPort
-BookSeat ..> Clock
-BookSeat ..> Ride : verifie
-BookSeat ..> Booking : cree
-HttpApi --> IdentityProvider : current_actor()
-HttpApi --> BookSeat : execute
-IdentityMissing ..> HttpApi : 401
+ProfilRepository <|.. SqliteProfilRepository
+NormaliseurPhoto <|.. normaliseurPhoto
+
+SqliteProfilRepository ..> Ouverture : base ouverte
+SqliteProfilRepository ..> Profil : convertit chaque ligne
+SqliteProfilRepository ..> Erreurs : ErrProfilIntrouvable
+normaliseurPhoto ..> Normaliser : délègue
+Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
+
+Routes --> GererProfil : appelle
+Routes ..> identite : lit X-User
+Routes ..> statutHTTP : traduit les erreurs
+statutHTTP ..> Erreurs : errors.Is
+
+Racine --> SqliteProfilRepository : instancie
+Racine --> normaliseurPhoto : instancie
+Racine --> Routes : monte le routeur
 @enduml
