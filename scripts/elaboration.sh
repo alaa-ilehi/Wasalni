@@ -41,7 +41,7 @@ echo "== 1d. One ticket per UC =="
 ticket() {  # title milestone body -> prints issue number
   gh issue create --title "$1" --milestone "$2" --body "$3" | grep -o '[0-9]*$'
 }
-N3=$(ticket "UC3 Book a seat (technical risk)"          Elaboration  "docs/uc3-book-seat.md - branch uc3-book-seat")
+N3=$(ticket "UC3 Book a seat (technical risk)"          Elaboration  "docs/uc3-book-seat.md - code porté par la branche architecture-elaboration")
 N1=$(ticket "UC1 Post a ride"                           Construction "branch uc1-post-ride")
 N2=$(ticket "UC2 Search rides"                         Construction "branch uc2-search-rides")
 N7=$(ticket "UC7 View ride details"                    Construction "branch uc7-ride-details")
@@ -69,8 +69,8 @@ else
   echo "  Projects -> New project -> Board, then add the 12 issues)"
 fi
 
-echo "== 2-3. Branch uc3-book-seat: diagrams + baseline architecture + first tests =="
-git checkout -b uc3-book-seat
+echo "== 2-3. Branch architecture-elaboration: diagrams + baseline architecture + first tests =="
+git checkout -b architecture-elaboration
 cp /tmp/README.full.md README.md
 git add README.md docs/uc3-book-seat.md docs/uml/uc3-sequence.puml docs/uml/uc3-class.puml
 git commit -m "docs(uc3): UC sheet, class and sequence diagrams (#$N3)"
@@ -84,9 +84,9 @@ git add .github/workflows/ci.yml
 git commit -m "ci: run pytest on every push and pull request"
 git add scripts/elaboration.sh
 git commit -m "chore: add elaboration automation script"
-git push -u origin uc3-book-seat
+git push -u origin architecture-elaboration
 
-gh pr create --base main --head uc3-book-seat \
+gh pr create --base main --head architecture-elaboration \
   --title "UC3 Book a seat (baseline architecture)" \
   --body "Closes #$N3
 
@@ -97,8 +97,8 @@ Baseline architecture running end to end for the risky UC: controller -> service
 
 echo "   waiting for CI..."
 sleep 15
-gh pr checks uc3-book-seat --watch --interval 10        # exits non-zero if CI fails -> script stops
-gh pr merge uc3-book-seat --merge --delete-branch
+gh pr checks architecture-elaboration --watch --interval 10        # exits non-zero if CI fails -> script stops
+gh pr merge architecture-elaboration --merge --delete-branch
 
 echo "== 4. Tag v0.1-elaboration and close the milestone =="
 git checkout main
