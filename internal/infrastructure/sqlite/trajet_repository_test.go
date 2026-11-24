@@ -84,9 +84,8 @@ func TestParIdentifiantRefuseUnTrajetInconnu(t *testing.T) {
 	}
 }
 
-// Le compteur de places ne bouge pas encore : la réservation s'écrit, le trajet reste plein.
-// Ce test fixe la limite actuelle (ADR 0004) et devra être inversé avec le décrément atomique.
-func TestReserverNeDecrementePasEncoreLesPlaces(t *testing.T) {
+// Le compteur de places est consommé par la réservation : la lecture suivante voit 2 places sur 3.
+func TestReserverDecrementeLesPlaces(t *testing.T) {
 	ctx := context.Background()
 	trajets, reservations, fermer := baseTrajet(t)
 	defer fermer()
@@ -105,9 +104,8 @@ func TestReserverNeDecrementePasEncoreLesPlaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("relecture : %v", err)
 	}
-	if relu.Places != relu.PlacesTotal {
-		t.Errorf("places disponibles = %d, attendu %d tant que le décrément n'existe pas",
-			relu.Places, relu.PlacesTotal)
+	if relu.Places != relu.PlacesTotal-1 {
+		t.Errorf("places disponibles = %d, attendu %d", relu.Places, relu.PlacesTotal-1)
 	}
 }
 

@@ -26,8 +26,10 @@ func NouveauReservationRepository(db *sql.DB) *ReservationRepository {
 	return &ReservationRepository{db: db}
 }
 
-// Reserver écrit la réservation dans une transaction ouverte en mode immédiat (ADR 0004).
-// Un doublon est signalé par l'index unique, traduit en domain.ErrReservationDejaActive.
+// Reserver consomme une place puis écrit la réservation, dans une seule transaction ouverte en mode
+// immédiat (ADR 0004). Le décrément conditionnel porte la règle « pas de surréservation » : sans place
+// libre, aucune ligne n'est modifiée et la transaction est annulée. Un doublon est signalé par l'index
+// unique ; son annulation rend la place décrémentée.
 func (r *ReservationRepository) Reserver(ctx context.Context, reservation domain.Reservation) (domain.Reservation, error) {
 	identifiant, err := nouvelIdentifiant()
 	if err != nil {
@@ -39,6 +41,21 @@ func (r *ReservationRepository) Reserver(ctx context.Context, reservation domain
 		return domain.Reservation{}, fmt.Errorf("début de transaction : %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	const decrement = `
+UPDATE rides SET seats_available = seats_available - 1
+WHERE id = ? AND seats_available > 0`
+	resultat, err := tx.ExecContext(ctx, decrement, reservation.Trajet)
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("décrément des places : %w", err)
+	}
+	consommees, err := resultat.RowsAffected()
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("décrément des places : %w", err)
+	}
+	if consommees == 0 {
+		return domain.Reservation{}, domain.ErrTrajetComplet
+	}
 
 	const requete = `
 INSERT INTO bookings (id, ride_id, passenger, status)

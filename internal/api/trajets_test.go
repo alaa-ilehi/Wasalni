@@ -165,3 +165,35 @@ func TestPublierTrajetPuisReserver(t *testing.T) {
 		t.Errorf("réservation du conducteur = %d, attendu 400", statut)
 	}
 }
+
+// Le décrément des places est visible par le contrat HTTP : deux places, deux réservations, puis 409.
+func TestReserverConsommeLesPlacesJusquauRefus(t *testing.T) {
+	serveur := bancTrajets(t)
+
+	statut, publie := posterTrajet(t, serveur, "bob",
+		`{"origin":"Lyon","destination":"Grenoble","departure_time":"2026-12-01T08:30:00Z",`+
+			`"seats_total":2,"price":12.5,"cancel_delay_hours":1}`)
+	if statut != http.StatusCreated {
+		t.Fatalf("publication : statut = %d, attendu 201 (corps %v)", statut, publie)
+	}
+	identifiant, _ := publie["id"].(string)
+
+	for _, passager := range []string{"alice", "carol"} {
+		if statut, corps := postReservation(t, serveur, identifiant, passager); statut != http.StatusCreated {
+			t.Fatalf("réservation de %s : statut = %d (corps %v)", passager, statut, corps)
+		}
+	}
+
+	statutLecture, trajet := getTrajet(t, serveur, identifiant, "")
+	if statutLecture != http.StatusOK {
+		t.Fatalf("lecture du trajet : statut = %d", statutLecture)
+	}
+	if trajet["seats_available"] != float64(0) || trajet["seats_total"] != float64(2) {
+		t.Errorf("places = %v/%v, attendu 0/2", trajet["seats_available"], trajet["seats_total"])
+	}
+
+	statut, corps := postReservation(t, serveur, identifiant, "dave")
+	if statut != http.StatusConflict {
+		t.Errorf("réservation sur un trajet plein : statut = %d, attendu 409 (corps %v)", statut, corps)
+	}
+}
