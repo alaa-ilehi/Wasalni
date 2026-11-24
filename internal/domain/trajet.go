@@ -83,3 +83,11 @@ func (t Trajet) ValiderPublication(maintenant time.Time) error {
 func (t Trajet) ResteAvantDepart(maintenant time.Time) time.Duration {
 	return t.Depart.Sub(maintenant)
 }
+
+// CriteresRecherche : filtres facultatifs de UC2. Une chaîne vide signifie « aucun filtre ».
+// Date est une date calendaire AAAA-MM-JJ, sans heure ni fuseau.
+type CriteresRecherche struct {
+	Origine     string
+	Destination string
+	Date        string
+}

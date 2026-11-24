@@ -40,6 +40,14 @@ func (t *trajetsFaux) ParIdentifiant(_ context.Context, identifiant string) (dom
 	return trajet, nil
 }
 
+// Rechercher n'est pas utilisé par UC3 ; la présence de la méthode suffit au port.
+func (t *trajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
+	if t.erreur != nil {
+		return nil, t.erreur
+	}
+	return nil, nil
+}
+
 // reservationsFausses : port ReservationRepository en mémoire, avec l'index unique simulé.
 type reservationsFausses struct {
 	actives map[string]bool
