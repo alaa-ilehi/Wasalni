@@ -32,17 +32,21 @@ func bancTrajets(t *testing.T) *httptest.Server {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	profils := sqlite.NouveauProfilRepository(db)
 	trajets := sqlite.NouveauTrajetRepository(db)
 	publier := application.NouveauPublierTrajet(trajets, horlogeFigee{})
 	rechercher := application.NouveauRechercherTrajets(trajets)
+	consulter := application.NouveauConsulterTrajet(trajets, profils)
 	reserver := application.NouveauReserverPlace(
 		trajets,
 		sqlite.NouveauReservationRepository(db),
 		notificateurMuet{},
 	)
 	serveur := httptest.NewServer(api.Routes(api.Deps{
+		Profils:      application.NouveauGererProfil(profils, adaptateurPhoto{}),
 		Recherches:   rechercher,
 		Trajets:      publier,
+		Details:      consulter,
 		Reservations: reserver,
 	}))
 	t.Cleanup(serveur.Close)

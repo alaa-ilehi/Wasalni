@@ -38,12 +38,14 @@ func main() {
 	}
 	defer db.Close()
 
-	gererProfil := application.NouveauGererProfil(sqlite.NouveauProfilRepository(db), normaliseurPhoto{})
+	profils := sqlite.NouveauProfilRepository(db)
+	gererProfil := application.NouveauGererProfil(profils, normaliseurPhoto{})
 
-	// Un seul entrepôt de trajets sert les cas d'utilisation publication (UC1), recherche (UC2) et lecture (UC3).
+	// Un seul entrepôt de trajets sert les cas d'utilisation publication (UC1), recherche (UC2), lecture (UC3) et détails (UC7).
 	trajets := sqlite.NouveauTrajetRepository(db)
 	publierTrajet := application.NouveauPublierTrajet(trajets, horlogeReelle{})
 	rechercherTrajets := application.NouveauRechercherTrajets(trajets)
+	consulterTrajet := application.NouveauConsulterTrajet(trajets, profils)
 	reserverPlace := application.NouveauReserverPlace(
 		trajets,
 		sqlite.NouveauReservationRepository(db),
@@ -56,6 +58,7 @@ func main() {
 			Profils:      gererProfil,
 			Recherches:   rechercherTrajets,
 			Trajets:      publierTrajet,
+			Details:      consulterTrajet,
 			Reservations: reserverPlace,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

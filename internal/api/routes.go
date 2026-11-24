@@ -18,6 +18,7 @@ type Deps struct {
 	Profils      application.GererProfil
 	Recherches   application.RechercherTrajets
 	Trajets      application.PublierTrajet
+	Details      application.ConsulterTrajet
 	Reservations application.ReserverPlace
 }
 
@@ -30,6 +31,7 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils))
 	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils))
 	mux.HandleFunc("GET /rides", rechercherTrajets(deps.Recherches))
+	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details))
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
 	return mux
@@ -141,6 +143,43 @@ func trajetVersJSON(t domain.Trajet) trajetJSON {
 		DelaiAnnulation: t.DelaiAnnulation.Hours(),
 		Statut:          string(t.Statut),
 		CreeLe:          t.CreeLe.UTC().Format(time.RFC3339),
+	}
+}
+
+// conducteurJSON : informations UC8 montrées par UC7. Note nil → null tant que UC6 n'est pas livré.
+type conducteurJSON struct {
+	Nom   string   `json:"name"`
+	Sexe  string   `json:"sex,omitempty"`
+	Age   int      `json:"age"`
+	Photo string   `json:"photo,omitempty"`
+	Note  *float64 `json:"rating"`
+}
+
+// detailTrajetJSON reprend les champs de trajetJSON et ajoute le conducteur (UC7).
+type detailTrajetJSON struct {
+	trajetJSON
+	Conducteur *conducteurJSON `json:"driver"`
+}
+
+// consulterTrajet : GET /rides/{id}, lecture sans identité requise (UC7, aucune précondition).
+func consulterTrajet(consulter application.ConsulterTrajet) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		detail, err := consulter.Executer(r.Context(), r.PathValue("id"))
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+
+		reponse := detailTrajetJSON{trajetJSON: trajetVersJSON(detail.Trajet)}
+		if detail.Profil != nil {
+			reponse.Conducteur = &conducteurJSON{
+				Nom:   detail.Profil.Nom,
+				Sexe:  string(detail.Profil.Sexe),
+				Age:   detail.Profil.Age,
+				Photo: detail.Profil.Photo,
+			}
+		}
+		repondreJSON(w, http.StatusOK, reponse)
 	}
 }
 
