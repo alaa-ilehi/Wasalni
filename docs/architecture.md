@@ -6,13 +6,13 @@ pas comme contrainte. L'écart entre les deux est explicité au §10, et les dé
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les 13 cas d'utilisation de la vision (UC1 à UC13, UC4 retiré). Seul UC3 est implémenté.
+- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Seul UC3 est implémenté.
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. rendre le risque technique du projet — la réservation concurrente — visible et testable à un seul endroit ;
   3. laisser une place explicite aux systèmes externes (authentification, notification) sans les simuler dans le domaine ;
   4. rendre l'ajout des UC restants mécanique : un cas d'utilisation = un fichier dans `application/` + des ports existants.
-- **Hors périmètre :** paiement et remboursement (retirés du projet), messagerie temps réel, multi-instance distribuée.
+- **Hors périmètre :** toute validation externe différée, la messagerie temps réel, le déploiement multi-instance.
 
 ## 2. Vue de contexte
 
@@ -174,7 +174,7 @@ l'`UPDATE` conditionnel sous `BEGIN IMMEDIATE`, l'index unique partiel, le coupl
 |---|---|
 | [0001](adr/0001-couches-et-ports.md) | Quatre couches, dépendances vers l'intérieur, ports déclarés par le domaine |
 | [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, transportée par `X-User`, extraite à la frontière |
-| [0003](adr/0003-sans-paiement.md) | Périmètre sans paiement ; réservation `ACTIVE` / `CANCELLED` |
+| [0003](adr/0003-reservation-deux-etats.md) | Réservation à deux états, `ACTIVE` ou `CANCELLED`, sans étape de confirmation |
 | [0004](adr/0004-concurrence-sqlite.md) | Concurrence traitée par `BEGIN IMMEDIATE` + `UPDATE` conditionnel + index unique partiel |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM, DDL au démarrage, connexion par opération |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance dans l'adaptateur |
