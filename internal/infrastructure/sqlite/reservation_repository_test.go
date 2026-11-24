@@ -3,7 +3,9 @@ package sqlite_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/alaa-ilehi/wasalni/internal/domain"
@@ -16,6 +18,14 @@ func baseReservation(t *testing.T) (*sqlite.ReservationRepository, func() error,
 	db, err := sqlite.Ouvrir(ctx, filepath.Join(t.TempDir(), "reservations.db"))
 	if err != nil {
 		t.Fatalf("ouverture de la base : %v", err)
+	}
+	// Les réservations ont désormais une clé étrangère vers rides : le banc crée ses trajets.
+	for _, identifiant := range []string{"t1", "t2"} {
+		if _, err := db.ExecContext(ctx, `
+INSERT INTO rides (id, driver, origin, destination, departure, seats_total, seats_available, price)
+VALUES (?, 'conducteur', 'Lyon', 'Grenoble', '2026-12-01T08:30:00Z', 3, 3, 12.5)`, identifiant); err != nil {
+			t.Fatalf("création du trajet %s : %v", identifiant, err)
+		}
 	}
 	compter := func(requete string) int {
 		var n int
@@ -137,5 +147,79 @@ func TestParPassagerRendLesReservationsDuPassagerTriees(t *testing.T) {
 	}
 	if vides == nil || len(vides) != 0 {
 		t.Errorf("réservations = %v, attendu une liste vide non nulle", vides)
+	}
+}
+
+func TestRefusDoublonConserveLeCompteur(t *testing.T) {
+	ctx := context.Background()
+	depot, fermer, compter := baseReservation(t)
+	defer fermer()
+
+	reservation := domain.Reservation{Trajet: "t1", Passager: "alice", Statut: domain.ReservationActive}
+	if _, err := depot.Reserver(ctx, reservation); err != nil {
+		t.Fatalf("première réservation : %v", err)
+	}
+	if n := compter(`SELECT seats_available FROM rides WHERE id = 't1'`); n != 2 {
+		t.Fatalf("places après la première = %d, attendu 2", n)
+	}
+	if _, err := depot.Reserver(ctx, reservation); !errors.Is(err, domain.ErrReservationDejaActive) {
+		t.Fatalf("doublon : erreur = %v, attendu ErrReservationDejaActive", err)
+	}
+	if n := compter(`SELECT seats_available FROM rides WHERE id = 't1'`); n != 2 {
+		t.Errorf("places après le refus = %d, attendu 2 (décrement annulé)", n)
+	}
+}
+
+func TestReserverConcurrentlySurLaDernierePlace(t *testing.T) {
+	ctx := context.Background()
+	depot, fermer, compter := baseReservation(t)
+	defer fermer()
+
+	const appels = 8
+	var attente sync.WaitGroup
+	depart := make(chan struct{})
+	succes := make(chan struct{}, appels)
+	erreurs := make(chan error, appels)
+
+	for i := 0; i < appels; i++ {
+		attente.Add(1)
+		go func(i int) {
+			defer attente.Done()
+			<-depart
+			_, err := depot.Reserver(ctx, domain.Reservation{
+				Trajet:   "t1",
+				Passager: fmt.Sprintf("passager-%d", i),
+				Statut:   domain.ReservationActive,
+			})
+			if err != nil {
+				erreurs <- err
+				return
+			}
+			succes <- struct{}{}
+		}(i)
+	}
+	close(depart)
+	attente.Wait()
+	close(succes)
+	close(erreurs)
+
+	if obtenus := len(succes); obtenus != 3 {
+		t.Errorf("succès = %d, attendu 3", obtenus)
+	}
+	complets := 0
+	for err := range erreurs {
+		if !errors.Is(err, domain.ErrTrajetComplet) {
+			t.Errorf("erreur inattendue = %v, attendu ErrTrajetComplet", err)
+		}
+		complets++
+	}
+	if complets != appels-3 {
+		t.Errorf("refus « complet » = %d, attendu %d", complets, appels-3)
+	}
+	if n := compter(`SELECT count(*) FROM bookings WHERE ride_id = 't1'`); n != 3 {
+		t.Errorf("réservations écrites = %d, attendu 3", n)
+	}
+	if n := compter(`SELECT seats_available FROM rides WHERE id = 't1'`); n != 0 {
+		t.Errorf("places restantes = %d, attendu 0", n)
 	}
 }

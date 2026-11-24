@@ -28,10 +28,8 @@ func NouveauReserverPlace(
 }
 
 // Executer applique les règles de UC3 dans cet ordre : trajet connu, passager distinct du conducteur,
-// place disponible, puis écriture. Le doublon est détecté par l'index unique de l'adaptateur.
-//
-// Limite connue (ADR 0004) : les places ne sont pas encore décrémentées, donc deux réservations
-// simultanées sur la dernière place peuvent aboutir. Le décrément atomique arrive avec la table rides.
+// place disponible, puis écriture. La lecture de places n'est qu'un refus rapide : l'arbitrage de la
+// dernière place et du doublon se fait dans la transaction de l'adaptateur (ADR 0004).
 func (uc ReserverPlace) Executer(ctx context.Context, trajetID, passager string) (domain.Reservation, error) {
 	if passager == "" {
 		return domain.Reservation{}, ErrIdentiteManquante

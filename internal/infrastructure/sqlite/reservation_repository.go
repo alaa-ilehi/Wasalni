@@ -26,8 +26,9 @@ func NouveauReservationRepository(db *sql.DB) *ReservationRepository {
 	return &ReservationRepository{db: db}
 }
 
-// Reserver écrit la réservation dans une transaction ouverte en mode immédiat (ADR 0004).
-// Un doublon est signalé par l'index unique, traduit en domain.ErrReservationDejaActive.
+// Reserver décrémente les places puis écrit la réservation dans une transaction ouverte en mode
+// immédiat (ADR 0004). Un trajet complet est signalé par zéro ligne mise à jour, un doublon par
+// l'index unique ; dans les deux cas la transaction est annulée, donc le compteur reste exact.
 func (r *ReservationRepository) Reserver(ctx context.Context, reservation domain.Reservation) (domain.Reservation, error) {
 	identifiant, err := nouvelIdentifiant()
 	if err != nil {
@@ -39,6 +40,23 @@ func (r *ReservationRepository) Reserver(ctx context.Context, reservation domain
 		return domain.Reservation{}, fmt.Errorf("début de transaction : %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// L'autorité sur la dernière place est la base, pas la lecture faite par le cas d'usage :
+	// zéro ligne modifiée signifie « complet », et la transaction est annulée.
+	const decrementer = `
+UPDATE rides SET seats_available = seats_available - 1
+WHERE id = ? AND seats_available > 0`
+	resultat, err := tx.ExecContext(ctx, decrementer, reservation.Trajet)
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("décrement des places : %w", err)
+	}
+	modifiees, err := resultat.RowsAffected()
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("décrement des places : %w", err)
+	}
+	if modifiees == 0 {
+		return domain.Reservation{}, domain.ErrTrajetComplet
+	}
 
 	const requete = `
 INSERT INTO bookings (id, ride_id, passenger, status)
