@@ -72,12 +72,10 @@ fi
 echo "== 2-3. Branch architecture-elaboration: diagrams + baseline architecture + first tests =="
 git checkout -b architecture-elaboration
 cp /tmp/README.full.md README.md
-git add README.md docs/uc3-book-seat.md docs/uml/uc3-sequence.puml docs/uml/uc3-class.puml
-git commit -m "docs(uc3): UC sheet, class and sequence diagrams (#$N3)"
-git add app/errors.py app/db.py app/models.py app/__init__.py run.py requirements.txt
-git commit -m "feat(uc3): application skeleton, SQLite schema, error model (#$N3)"
-git add app/repositories app/services app/controllers
-git commit -m "feat(uc3): book-a-seat route end to end: controller, service, repository (#$N3)"
+git add README.md docs
+ git commit -m "docs(uc3): UC sheet, architecture, ADRs and UML views (#$N3)"
+git add app/__init__.py app/domain app/application app/infrastructure app/api run.py requirements.txt
+git commit -m "feat(uc3): layered architecture and book-a-seat route end to end (#$N3)"
 git add tests
 git commit -m "test(uc3): unit, integration and concurrency tests (#$N3)"
 git add .github/workflows/ci.yml

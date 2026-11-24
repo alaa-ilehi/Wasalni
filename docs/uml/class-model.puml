@@ -1,0 +1,108 @@
+@startuml
+title Wasalni - modele de classes (perimetre implemente : UC3)
+
+skinparam classAttributeIconSize 0
+
+package "app/domain" {
+  class Ride {
+    id : int
+    driver : str
+    origin : str
+    destination : str
+    departure : str
+    seats_total : int
+    seats_available : int
+    price : float
+    to_dict() : dict
+  }
+
+  enum BookingStatus {
+    ACTIVE
+    CANCELLED
+  }
+
+  class Booking {
+    id : int
+    ride_id : int
+    passenger : str
+    status : BookingStatus
+    created_at : str
+    to_dict() : dict
+  }
+
+  class DomainError {
+    message : str
+  }
+  class RideNotFound
+  class RideFull
+  class DuplicateBooking
+  class DriverCannotBook
+  class InvalidRide
+
+  interface RideRepository {
+    create(driver, origin, destination, departure, seats, price) : Ride
+    get(ride_id) : Ride | None
+  }
+
+  interface BookingRepository {
+    book_seat(ride_id, passenger, created_at) : Booking
+    get(booking_id) : Booking | None
+  }
+
+  interface NotificationPort {
+    send(recipient, message, event_type)
+  }
+
+  interface Clock {
+    now() : str
+  }
+
+  DomainError <|-- RideNotFound
+  DomainError <|-- RideFull
+  DomainError <|-- DuplicateBooking
+  DomainError <|-- DriverCannotBook
+  DomainError <|-- InvalidRide
+  Ride --> Booking : 1..*
+}
+
+package "app/application" {
+  class BookSeat {
+    rides : RideRepository
+    bookings : BookingRepository
+    notifications : NotificationPort
+    clock : Clock
+    execute(ride_id, actor) : Booking
+  }
+  class IdentityMissing
+  DomainError <|-- IdentityMissing
+}
+
+package "app/infrastructure" {
+  class SqliteRideRepository
+  class SqliteBookingRepository
+  class RecordingNotifications {
+    sent : list
+  }
+  class SystemClock
+}
+
+package "app/api" {
+  class HttpApi {
+    POST /rides/{id}/bookings
+    + table erreur -> code HTTP
+  }
+}
+
+RideRepository <|.. SqliteRideRepository
+BookingRepository <|.. SqliteBookingRepository
+NotificationPort <|.. RecordingNotifications
+Clock <|.. SystemClock
+
+BookSeat ..> RideRepository
+BookSeat ..> BookingRepository
+BookSeat ..> NotificationPort
+BookSeat ..> Clock
+BookSeat ..> Ride : verifie
+BookSeat ..> Booking : cree
+HttpApi --> BookSeat : execute
+@enduml

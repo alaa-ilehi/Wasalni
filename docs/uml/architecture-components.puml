@@ -1,0 +1,53 @@
+@startuml
+title Wasalni - vue des composants
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+
+actor "Client\n(interface web FR)" as Client
+
+package "Interface - app/api" {
+  [HttpApi\n(blueprint Flask, erreurs -> HTTP)] as HttpApi
+}
+
+package "Application - app/application" {
+  [BookSeat\n(cas d'utilisation UC3)] as BookSeat
+}
+
+package "Domaine - app/domain" {
+  [Ride\nBooking BookingStatus] as Entities
+  interface "RideRepository" as IRide
+  interface "BookingRepository" as IBooking
+  interface "NotificationPort" as INotif
+  interface "Clock" as IClock
+}
+
+package "Infrastructure - app/infrastructure" {
+  [SqliteRideRepository] as SqlRide
+  [SqliteBookingRepository] as SqlBooking
+  [RecordingNotifications\n(systeme externe simule)] as Notif
+  [SystemClock] as Clock
+}
+
+database "SQLite" as DB
+cloud "Systeme de notification\n(externe)" as ExternalNotif
+cloud "Systeme d'authentification\n(externe, hors code)" as ExternalAuth
+
+Client --> HttpApi : HTTP + X-User
+ExternalAuth ..> Client : identite
+HttpApi --> BookSeat : execute(ride_id, actor)
+BookSeat ..> IRide
+BookSeat ..> IBooking
+BookSeat ..> INotif
+BookSeat ..> IClock
+
+IRide <|.. SqlRide
+IBooking <|.. SqlBooking
+INotif <|.. Notif
+IClock <|.. Clock
+
+SqlRide --> DB
+SqlBooking --> DB
+Notif ..> ExternalNotif : livraison au mieux
+Entities <.. BookSeat : utilise
+@enduml

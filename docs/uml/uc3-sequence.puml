@@ -1,43 +1,50 @@
 @startuml
-title UC3 Book a seat - nominal scenario and alternatives
-actor Passenger
-participant Api
-participant BookingService
-participant RideRepository
-participant BookingRepository
-database SQLite
-participant NotificationService
+title UC3 Reserver une place - scenario nominal et alternatives
+skinparam defaultTextAlignment left
 
-Passenger -> Api : POST /rides/{id}/bookings (X-User)
-Api -> BookingService : book_seat(ride_id, passenger)
-BookingService -> RideRepository : get(ride_id)
-RideRepository --> BookingService : Ride
-alt ride not found
-  BookingService --> Api : RideNotFound
-  Api --> Passenger : 404
-else passenger is the driver
-  BookingService --> Api : InvalidBooking
-  Api --> Passenger : 400
-else
-  BookingService -> BookingRepository : book_seat(ride_id, passenger)
-  BookingRepository -> SQLite : BEGIN IMMEDIATE
-  BookingRepository -> SQLite : UPDATE rides SET seats_available = seats_available - 1\nWHERE id = ? AND seats_available > 0
-  alt 0 rows updated
-    BookingRepository -> SQLite : ROLLBACK
-    BookingService --> Api : RideFull
-    Api --> Passenger : 409
-  else duplicate active booking
-    BookingRepository -> SQLite : INSERT booking (unique index violated)
-    BookingRepository -> SQLite : ROLLBACK
-    BookingService --> Api : DuplicateBooking
-    Api --> Passenger : 409
-  else seat held
-    BookingRepository -> SQLite : INSERT booking (ACTIVE)
-    BookingRepository -> SQLite : COMMIT
-    BookingRepository --> BookingService : Booking
-    BookingService -> NotificationService : notify(passenger: seat held)
-    BookingService --> Api : Booking
-    Api --> Passenger : 201 Created (ACTIVE)
+actor Passenger
+participant "HttpApi\n(app/api)" as Api
+participant "BookSeat\n(app/application)" as UC
+participant "RideRepository\n(port)" as Rides
+participant "BookingRepository\n(port)" as Bookings
+database "SQLite\n(adaptateur)" as DB
+participant "NotificationPort\n(port)" as Notif
+
+Passenger -> Api : POST /rides/{id}/bookings\nX-User
+Api -> Api : extrait l'identite (actor)
+alt en-tete X-User absent
+  Api --> Passenger : 401 IdentityMissing
+else identite presente
+  Api -> UC : execute(ride_id, actor)
+  UC -> Rides : get(ride_id)
+  Rides --> UC : Ride | None
+  alt trajet inconnu
+    UC --> Api : RideNotFound
+    Api --> Passenger : 404
+  else passager = conducteur
+    UC --> Api : DriverCannotBook
+    Api --> Passenger : 400
+  else
+    UC -> Bookings : book_seat(ride_id, actor, clock.now())
+    Bookings -> DB : BEGIN IMMEDIATE
+    Bookings -> DB : UPDATE rides SET seats_available = seats_available - 1\nWHERE id = ? AND seats_available > 0
+    alt 0 ligne modifiee
+      Bookings -> DB : ROLLBACK
+      UC --> Api : RideFull
+      Api --> Passenger : 409
+    else reservation active deja existante
+      Bookings -> DB : INSERT booking (index unique viole)
+      Bookings -> DB : ROLLBACK
+      UC --> Api : DuplicateBooking
+      Api --> Passenger : 409
+    else place retenue
+      Bookings -> DB : INSERT booking (ACTIVE)
+      Bookings -> DB : COMMIT
+      Bookings --> UC : Booking
+      UC -> Notif : send(actor, "place retenue")
+      UC --> Api : Booking
+      Api --> Passenger : 201 Created (ACTIVE)
+    end
   end
 end
 @enduml

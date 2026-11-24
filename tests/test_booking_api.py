@@ -7,7 +7,7 @@ def test_book_seat_nominal_scenario(app, client, notifier):
     r = client.post(f"/rides/{ride_id}/bookings", headers={"X-User": "ali"})
     assert r.status_code == 201
     assert r.get_json()["status"] == "ACTIVE"
-    assert app.rides.get(ride_id).seats_available == 1          # seat decremented in the database
+    assert app.container.rides.get(ride_id).seats_available == 1          # seat decremented in the database
     assert len(notifier.sent) == 1
 
 
@@ -17,7 +17,7 @@ def test_last_seat_second_passenger_gets_409(app, client):
     second = client.post(f"/rides/{ride_id}/bookings", headers={"X-User": "sara"})
     assert first.status_code == 201
     assert second.status_code == 409
-    assert app.rides.get(ride_id).seats_available == 0
+    assert app.container.rides.get(ride_id).seats_available == 0
 
 
 def test_unknown_ride_404(client):
@@ -40,4 +40,4 @@ def test_double_booking_same_passenger_409(app, client):
     client.post(f"/rides/{ride_id}/bookings", headers={"X-User": "ali"})
     r = client.post(f"/rides/{ride_id}/bookings", headers={"X-User": "ali"})
     assert r.status_code == 409
-    assert app.rides.get(ride_id).seats_available == 2          # failed attempt did not consume a seat
+    assert app.container.rides.get(ride_id).seats_available == 2          # failed attempt did not consume a seat
