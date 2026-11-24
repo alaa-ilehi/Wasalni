@@ -13,4 +13,12 @@ jobs:
           cache: true
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./...
+      - name: Formatage (gofmt)
+        run: |
+          non_formates=$(gofmt -l .)
+          if [ -n "$non_formates" ]; then
+            echo "Fichiers Go non formatés, lancer « gofmt -w » :"
+            echo "$non_formates"
+            exit 1
+          fi
+      - run: go test -race ./...

@@ -339,7 +339,7 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   SQLite sur base temporaire — insertion, doublon refusé sans seconde ligne, index partiel qui laisse passer un autre
   passager ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
   conducteur, `404`, `409` complet, `201`, `409` doublon.
-- **Commandes** : `go build ./...`, `go vet ./...`, `go test ./...`, et `go test -race ./...` en local.
+- **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute.
 
 ## 13. Lancer le service
 
