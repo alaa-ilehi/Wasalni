@@ -33,14 +33,14 @@ const (
 // Paliers d'encodage : le côté maximal essayé successivement, du plus grand au plus petit.
 var paliers = [...]int{CoteMax, 256, CoteMin}
 
-var (
-	// PoidsMax est le poids maximal de l'image stockée (512 Kio). Variable pour que les tests puissent
-	// simuler un budget inatteignable sans créer d'image énorme.
-	PoidsMax = 512 << 10
-	// PixelsMax borne les pixels décodés (24 Mpx). Le corps de la requête est borné en octets, pas en
-	// pixels : sans ce plafond, quelques mégaoctets peuvent faire allouer des gigaoctets.
-	PixelsMax = 24_000_000
-)
+// PixelsMax borne les pixels décodés (24 Mpx). Le corps de la requête est borné en octets, pas en
+// pixels : sans ce plafond, quelques dizaines d'octets peuvent déclarer 20 000 × 20 000 pixels et faire
+// allouer un gigaoctet et demi avant la réduction.
+const PixelsMax = 24_000_000
+
+// PoidsMax est le poids maximal de l'image stockée (512 Kio). Variable pour que les tests puissent
+// simuler un budget inatteignable sans créer d'image énorme.
+var PoidsMax = 512 << 10
 
 var (
 	ErrImageIllisible  = errors.New("image illisible ou format non pris en charge")
