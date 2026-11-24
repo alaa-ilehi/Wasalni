@@ -178,6 +178,12 @@ positif ou nul et strictement inférieur au temps restant avant le départ. Le d
 disponibles partent au maximum, le statut est `PUBLISHED`. Un refus rend `400` avec le motif en clair :
 `{"error":"trajet invalide : l'origine et la destination doivent être différentes"}`.
 
+![Séquence UC1](uml/uc1-sequence.png)
+
+Source : [uml/uc1-sequence.puml](uml/uc1-sequence.puml). Le diagramme suit le scénario nominal de la fiche
+[UC1](uc1-publish-ride.md) : validation avant écriture, statut `PUBLISHED`, places au maximum ; le décrément des places
+reste différé (ADR 0004).
+
 Ordre des contrôles d'une réservation : identité (`401`), trajet connu (`404`), trajet exploitable (`400`), passager distinct du
 conducteur (`400`), place disponible (`409`), puis écriture ; le doublon éventuel est refusé par l'index unique et rend
 `409`. Aucune place n'est décrémentée dans cette version (§15).
@@ -263,10 +269,11 @@ d'utilisation correspondants (§14).
 
 ![Modèle de classes](uml/class-model.png)
 
-Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** : entité `Profil` et ses
-bornes, port `ProfilRepository` et son adaptateur SQLite, port `NormaliseurPhoto` et `photos.Normaliser`, cas
-d'utilisation `GererProfil` et adaptateur HTTP. Il se maintient avec le code : un diagramme qui diverge de
-l'implémentation est un défaut, pas une illustration.
+Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** pour UC8 et UC1 : entités
+`Profil` et `Trajet` et leurs bornes, ports `ProfilRepository`, `TrajetRepository`, `NormaliseurPhoto` et `Horloge` avec
+leurs adaptateurs SQLite, photo et horloge réelle, cas d'utilisation `GererProfil` et `PublierTrajet`, adaptateur HTTP.
+La séquence correspondante est en [UC1](uml/uc1-sequence.puml). Le diagramme se maintient avec le code : un diagramme
+qui diverge de l'implémentation est un défaut, pas une illustration.
 
 ## 10. Pipeline photo
 
@@ -370,7 +377,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
 | UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté, périmètre réduit : pas de décrément de places (ADR 0004, §15) |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
-| UC1, UC2, UC5, UC6, UC7, UC9, UC10, UC11 | — | — | non implémentés |
+| UC2, UC5, UC6, UC7, UC9, UC10, UC11 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
