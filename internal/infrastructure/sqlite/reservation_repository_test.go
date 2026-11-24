@@ -90,3 +90,52 @@ func TestIndexPartielAutoriseUneNouvelleReservationApresAnnulation(t *testing.T)
 		t.Error("identifiant de la première réservation perdu")
 	}
 }
+
+func TestParPassagerRendLesReservationsDuPassagerTriees(t *testing.T) {
+	ctx := context.Background()
+	depot, fermer, _ := baseReservation(t)
+	defer fermer()
+
+	for _, trajet := range []string{"t1", "t2"} {
+		if _, err := depot.Reserver(ctx, domain.Reservation{
+			Trajet: trajet, Passager: "alice", Statut: domain.ReservationActive,
+		}); err != nil {
+			t.Fatalf("réservation %s : %v", trajet, err)
+		}
+	}
+	if _, err := depot.Reserver(ctx, domain.Reservation{
+		Trajet: "t1", Passager: "bob", Statut: domain.ReservationActive,
+	}); err != nil {
+		t.Fatalf("réservation de bob : %v", err)
+	}
+
+	reservations, err := depot.ParPassager(ctx, "alice")
+	if err != nil {
+		t.Fatalf("listage : %v", err)
+	}
+	if len(reservations) != 2 {
+		t.Fatalf("réservations d'alice = %d, attendu 2", len(reservations))
+	}
+	for _, reservation := range reservations {
+		if reservation.Passager != "alice" {
+			t.Errorf("passager = %q, attendu alice", reservation.Passager)
+		}
+		if reservation.Statut != domain.ReservationActive {
+			t.Errorf("statut = %q, attendu %q", reservation.Statut, domain.ReservationActive)
+		}
+	}
+	// created_at a la précision de la seconde : à horodatage égal, l'ordre dépend du tri secondaire,
+	// donc on vérifie l'ensemble des trajets, pas la position exacte.
+	vus := map[string]bool{reservations[0].Trajet: true, reservations[1].Trajet: true}
+	if !vus["t1"] || !vus["t2"] {
+		t.Errorf("trajets rendus = %v, attendu t1 et t2", vus)
+	}
+
+	vides, err := depot.ParPassager(ctx, "inconnu")
+	if err != nil {
+		t.Fatalf("listage d'un passager sans réservation : %v", err)
+	}
+	if vides == nil || len(vides) != 0 {
+		t.Errorf("réservations = %v, attendu une liste vide non nulle", vides)
+	}
+}

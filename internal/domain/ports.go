@@ -14,9 +14,11 @@ type TrajetRepository interface {
 	ParIdentifiant(ctx context.Context, identifiant string) (Trajet, error)
 }
 
-// ReservationRepository : écriture des réservations.
+// ReservationRepository : écriture et lecture des réservations.
 // Contrat : Reserver échoue avec domain.ErrReservationDejaActive si une réservation ACTIVE existe déjà
 // pour le couple (trajet, passager) ; la garantie vient de l'index unique partiel, pas d'une lecture préalable.
 type ReservationRepository interface {
 	Reserver(ctx context.Context, r Reservation) (Reservation, error)
+	// ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne.
+	ParPassager(ctx context.Context, passager string) ([]Reservation, error)
 }

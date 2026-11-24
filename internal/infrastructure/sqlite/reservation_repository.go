@@ -66,6 +66,46 @@ RETURNING created_at`
 	return reservation, nil
 }
 
+// ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne (ADR 0003 :
+// les deux états sont rendus, l'appelant décide de ce qu'il affiche).
+func (r *ReservationRepository) ParPassager(ctx context.Context, passager string) ([]domain.Reservation, error) {
+	const requete = `
+SELECT id, ride_id, passenger, status, created_at
+FROM bookings
+WHERE passenger = ?
+ORDER BY created_at DESC, id DESC`
+	lignes, err := r.db.QueryContext(ctx, requete, passager)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des réservations : %w", err)
+	}
+	defer func() { _ = lignes.Close() }()
+
+	reservations := make([]domain.Reservation, 0, 4)
+	for lignes.Next() {
+		var (
+			identifiant, trajet, passagerLigne, statut, creeLe string
+		)
+		if err := lignes.Scan(&identifiant, &trajet, &passagerLigne, &statut, &creeLe); err != nil {
+			return nil, fmt.Errorf("lecture d'une réservation : %w", err)
+		}
+		horodatage, err := time.Parse(time.RFC3339, creeLe)
+		if err != nil {
+			return nil, fmt.Errorf("horodatage de création illisible %q : %w", creeLe, err)
+		}
+		reservations = append(reservations, domain.Reservation{
+			Identifiant: identifiant,
+			Trajet:      trajet,
+			Passager:    passagerLigne,
+			Statut:      domain.StatutReservation(statut),
+			CreeLe:      horodatage,
+		})
+	}
+	if err := lignes.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des réservations : %w", err)
+	}
+	return reservations, nil
+}
+
 // nouvelIdentifiant : 128 bits aléatoires, pour ne pas dépendre d'un compteur partagé.
 func nouvelIdentifiant() (string, error) {
 	octets := make([]byte, 16)

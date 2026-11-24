@@ -50,6 +50,20 @@ func (r *reservationsFausses) Reserver(_ context.Context, reservation domain.Res
 	return reservation, nil
 }
 
+// ParPassager : vue mémoire du listage, pour couvrir le port complet.
+func (r *reservationsFausses) ParPassager(_ context.Context, passager string) ([]domain.Reservation, error) {
+	if r.erreur != nil {
+		return nil, r.erreur
+	}
+	resultat := make([]domain.Reservation, 0, len(r.creees))
+	for i := len(r.creees) - 1; i >= 0; i-- {
+		if r.creees[i].Passager == passager {
+			resultat = append(resultat, r.creees[i])
+		}
+	}
+	return resultat, nil
+}
+
 // notificateurFaux : trace les appels et peut échouer.
 type notificateurFaux struct {
 	appels int
