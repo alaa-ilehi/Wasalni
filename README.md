@@ -112,7 +112,7 @@ La phase **Inception** (points 1 à 4) a lieu avant l'itération 1.
 ## 5. Automatisation
 
 `scripts/elaboration.sh` rejoue les étapes 1 à 4 de la partie 1 avec `git` et `gh`
-(tickets, milestones, tableau de bord, branche UC3, CI, tag `v0.1-elaboration`).
+(tickets, milestones, tableau de bord, branche `architecture-elaboration`, CI, tag `v0.1-elaboration`).
 `docs/elaboration-manual.md` donne les mêmes étapes à la main.
 
 a7la nes gafsa

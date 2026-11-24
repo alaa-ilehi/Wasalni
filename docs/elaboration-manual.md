@@ -20,7 +20,7 @@ Sur GitHub :
 - Une branche par UC, nommée `ucN-<slug>` (voir le tableau du `README.md`) ; le tableau de bord
   peut suivre une colonne par branche.
 
-## 2-3. Diagrammes et architecture de base sur la branche UC3
+## 2-3. Diagrammes et architecture de base sur la branche `architecture-elaboration`
 ```bash
 git checkout -b architecture-elaboration
 git add docs/uc3-book-seat.md docs/uml && git commit -m "docs(uc3): fiche UC, diagrammes de classe et de séquence (#1)"
