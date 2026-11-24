@@ -52,6 +52,20 @@ func bancReservations(t *testing.T, trajets trajetsEnMemoire) *httptest.Server {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	// La clé étrangère de bookings impose une ligne rides derrière chaque trajet du banc : ces trajets
+	// sont en mémoire pour le port, mais leur contrepartie SQL doit exister pour l'écriture.
+	for identifiant, trajet := range trajets {
+		places := trajet.Places
+		if places < 1 {
+			places = 1 // seats_total >= 1 ; un trajet déjà plein est refusé avant l'écriture
+		}
+		if _, err := db.Exec(`INSERT INTO rides (id, driver, origin, destination, departure,
+seats_total, seats_available, price) VALUES (?, 'bob', 'Lyon', 'Grenoble', '2026-12-01T08:00:00Z', ?, ?, 0)`,
+			identifiant, places, trajet.Places); err != nil {
+			t.Fatalf("trajet %s : %v", identifiant, err)
+		}
+	}
+
 	reserver := application.NouveauReserverPlace(
 		trajets,
 		sqlite.NouveauReservationRepository(db),

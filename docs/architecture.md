@@ -3,17 +3,17 @@
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
 référence. Trois cas d'utilisation sont implémentés : UC1 (publier un trajet), UC8 (gérer son profil) et UC3 (réserver
-une place), ce dernier sans décrément de places (§15). Les décisions structurantes sont tracées en ADR (§16).
+une place). Les décisions structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
 - **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Trois sont livrés : UC8 (gérer son profil), UC1
-  (publier un trajet) et UC3 (réserver une place). UC3 reste dans un périmètre réduit : les réservations sont écrites,
-  mais le décrément des places n'existe pas encore (§15).
+  (publier un trajet) et UC3 (réserver une place). UC3 consomme une place par réservation, dans la même
+  transaction immédiate que l'écriture (ADR 0004).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
-     réservations est aujourd'hui garantie par la base, le décrément atomique des places reste différé (ADR 0004) ;
+     réservations et la consommation d'une place sont garanties par la base, dans une seule transaction (ADR 0004) ;
   3. laisser une place explicite aux systèmes externes (authentification, notification) sans les simuler dans le domaine ;
   4. rendre l'ajout des UC restants mécanique : un cas d'utilisation = un fichier dans `internal/application`, plus des
      ports existants.
@@ -181,17 +181,17 @@ disponibles partent au maximum, le statut est `PUBLISHED`. Un refus rend `400` a
 ![Séquence UC1](uml/uc1-sequence.png)
 
 Source : [uml/uc1-sequence.puml](uml/uc1-sequence.puml). Le diagramme suit le scénario nominal de la fiche
-[UC1](uc1-publish-ride.md) : validation avant écriture, statut `PUBLISHED`, places au maximum ; le décrément des places
-reste différé (ADR 0004).
+[UC1](uc1-publish-ride.md) : validation avant écriture, statut `PUBLISHED`, places au maximum à la publication ; chaque réservation en consomme une (UC3, ADR 0004).
 
 Ordre des contrôles d'une réservation : identité (`401`), trajet connu (`404`), trajet exploitable (`400`), passager distinct du
 conducteur (`400`), place disponible (`409`), puis écriture ; le doublon éventuel est refusé par l'index unique et rend
-`409`. Aucune place n'est décrémentée dans cette version (§15).
+`409`. La place est décrémentée par un `UPDATE` conditionnel dans la même transaction immédiate que l'insertion : zéro
+ligne modifiée rend `409`, et un doublon refusé ne coûte pas de place (ADR 0004).
 
 ![Séquence UC3](uml/uc3-sequence.png)
 
-Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le comportement **livré** : la note finale
-rappelle le décrément différé, il ne doit pas être dessiné comme appliqué tant que la table `rides` n'existe pas.
+Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le comportement **livré** : le décrément conditionnel et la clé étrangère y figurent, et leur
+échec respectif rend `409`.
 
 ## 9. Modèle de données
 
@@ -232,7 +232,7 @@ Celle de UC3 :
 ```sql
 CREATE TABLE IF NOT EXISTS bookings (
     id         TEXT PRIMARY KEY,
-    ride_id    TEXT NOT NULL,
+    ride_id    TEXT NOT NULL REFERENCES rides(id),
     passenger  TEXT NOT NULL,
     status     TEXT NOT NULL CHECK (status IN ('ACTIVE', 'CANCELLED')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -252,15 +252,16 @@ Invariants portés par le schéma ou par le domaine :
 - `created_at` et `updated_at` sont posés par la base au format RFC 3339 UTC, puis relus par `RETURNING` : le service
   n'horodate pas lui-même.
 - Le schéma est idempotent (`CREATE TABLE IF NOT EXISTS`) et appliqué à chaque démarrage ; il n'y a pas de migration
-  versionnée.
+  versionnée. La seule évolution structurelle, la clé étrangère de `bookings`, est portée par une reconstruction de table
+  (`bookings_ancienne` → `bookings`) déclenchée par `PRAGMA foreign_key_list(bookings)`, elle aussi rejouable ; la copie
+  est stricte, une réservation orpheline fait échouer le démarrage plutôt que disparaître en silence.
 - `bookings.status` est contraint à `ACTIVE` ou `CANCELLED` (ADR 0003) ; l'index partiel `bookings_active_unique`
   interdit deux réservations `ACTIVE` pour le même couple (trajet, passager), y compris sous appels simultanés.
 - `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` : `COMPLETED` attend UC11.
-- `rides.seats_available` démarre à `seats_total` et **ne bouge pas encore** : le décrément à la réservation est différé
-  (ADR 0004, §15). Un test fixe explicitement cette limite et devra être inversé avec le décrément.
-- `bookings.ride_id` n'a pas de clé étrangère vers `rides`, alors que la table existe désormais : la contrainte viendra
-  avec le décrément atomique, dans la même migration logique (issue de suivi de UC3). Sans elle, la base n'empêche pas
-  une réservation orpheline ; le cas d'usage, lui, lit toujours le trajet avant d'écrire.
+- `rides.seats_available` démarre à `seats_total` et décroît d'une unité par réservation : `UPDATE ... WHERE
+  seats_available > 0` qui ne modifie aucune ligne vaut `domain.ErrTrajetComplet` et annule la transaction (ADR 0004).
+- `bookings.ride_id` référence `rides(id)` : une réservation orpheline est refusée par la base, en plus du trajet
+  obligatoirement lu par le cas d'usage.
 
 Les tables des autres UC (évaluations, messages) n'existent pas encore : elles seront ajoutées avec les cas
 d'utilisation correspondants (§14).
@@ -338,13 +339,15 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   origine, destination, places incohérentes, prix, délai, départ passé ou à l'instant, statut inconnu) ; cas d'usage —
   écriture d'un trajet `PUBLISHED` avec places au maximum, délai par défaut ou explicite, alias `departure`, date sans
   fuseau lue en UTC, huit refus qui n'écrivent rien, erreur de dépôt propagée telle quelle ; adaptateur SQLite — aller-
-  retour `Publier`/`ParIdentifiant`, identifiant inconnu, non-décrément des places après réservation ; HTTP — `401`,
+  retour `Publier`/`ParIdentifiant`, identifiant inconnu, place décrémentée après réservation ; HTTP — `401`,
   cinq `400`, `201` avec la forme exacte de la réponse, puis réservation réelle sur le trajet publié (`201`) et refus du
   conducteur (`400`).
 - **Tests d'UC3** : cas d'usage avec faux `TrajetRepository`, faux `ReservationRepository` (index unique simulé) et faux
   `Notificateur` — quatre refus, succès, doublon, notification en échec qui ne défait pas la réservation ; adaptateur
-  SQLite sur base temporaire — insertion, doublon refusé sans seconde ligne, index partiel qui laisse passer un autre
-  passager ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
+  SQLite sur base temporaire — insertion, place consommée, dernière place refusée, doublon refusé sans seconde ligne ni
+  place perdue, index partiel qui laisse passer un autre passager, huit réservations concurrentes pour trois places
+  donnant exactement trois succès, clé étrangère qui refuse une réservation orpheline, migration qui conserve les
+  réservations ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
   conducteur, `404`, `409` complet, `201`, `409` doublon.
 - **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 64 s sur `main`, dont près de 50 s de compilation instrumentée.
 
@@ -375,19 +378,14 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC8 | `GererProfil` (`internal/application/gerer_profil.go`) | `ProfilRepository`, `NormaliseurPhoto` | implémenté |
 | UC13 | `identite` (`internal/api/identite.go`) : lecture de `X-User` | — | partiel : l'identité est lue, pas vérifiée (système externe) |
 | UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
-| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté, périmètre réduit : pas de décrément de places (ADR 0004, §15) |
+| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté : décrément atomique des places et clé étrangère (ADR 0004) |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
 | UC2, UC5, UC6, UC7, UC9, UC10, UC11 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
-- **Pas de décrément de places.** La table `rides` existe depuis UC1, mais `seats_available` reste à sa valeur de
-  publication : UC3 écrit des réservations sans toucher au compteur. Conséquence directe : le refus « trajet complet »
-  s'appuie sur la valeur lue et deux réservations simultanées sur la dernière place peuvent aboutir. Le décrément
-  conditionnel et son test de concurrence sont la dette suivie par l'issue de suivi de #12 ; le contrat du port
-  `ReservationRepository` ne changera pas (ADR 0004).
-- **Pas de clé étrangère sur `bookings.ride_id`.** Elle arrivera avec le décrément ; l'ordre d'écriture n'est donc pas
-  garanti par la base aujourd'hui.
+- **Annulation absente.** Une réservation `CANCELLED` n'existe que par écriture directe : UC5 n'a ni endpoint ni
+  remise en vente de la place, donc `seats_available` ne remonte jamais.
 - **UC2 (consulter un trajet) n'a pas d'endpoint.** Le port `ParIdentifiant` existe et sert UC3, mais aucune route ne rend
   un trajet publié ; c'est la prochaine brique naturelle.
 - **Photos stockées en base.** `users.photo` contient le PNG en base64 : environ un tiers de surcoût par rapport au
@@ -403,8 +401,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
   UC3 ajoutera ses tables.
 - **Coût du pipeline non borné en pixels.** La limite de 10 Mio borne l'entrée, pas le nombre de pixels décodés ni le coût
   du box filter. Une image très grande reste coûteuse en mémoire avant réduction.
-- **Trois UC couverts, deux partiellement.** UC8 et UC1 sont complets ; UC3 l'est sauf le compteur de places ; UC12 n'a
-  qu'un adaptateur de journal. Les autres cas d'utilisation n'ont ni code ni test ; leur place est réservée dans
+- **Trois UC couverts, tous complets.** UC8, UC1 et UC3 le sont ; UC13 et UC12 n'ont qu'un adaptateur (identité non
+  vérifiée, journal au lieu d'un système de notification). Les autres cas d'utilisation n'ont ni code ni test ; leur place est réservée dans
   l'architecture (§14), pas dans le schéma.
 
 ## 16. Décisions (ADR)
@@ -414,7 +412,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | [0001](adr/0001-couches-et-ports.md) | Quatre couches en paquets Go, dépendances vers l'intérieur, ports déclarés par le domaine | accepté |
 | [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, lue dans `internal/api/identite.go` | accepté |
 | [0003](adr/0003-reservation-deux-etats.md) | Réservation à deux états, `ACTIVE` ou `CANCELLED`, sans étape de confirmation | appliqué |
-| [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel aujourd'hui, décrément conditionnel différé | partiellement appliqué |
+| [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel et décrément conditionnel dans la transaction immédiate | appliqué |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur | accepté |
 | [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 (adaptateur journal) |

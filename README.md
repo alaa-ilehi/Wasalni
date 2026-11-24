@@ -4,9 +4,9 @@
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
-**État actuel :** UC8 (gérer son profil) et UC1 (publier un trajet) sont complets ; UC3 (réserver une place) est
-implémenté sans décrément de places — la table `rides` existe, mais son compteur ne bouge pas encore, donc le décrément
-atomique et son test de concurrence restent à faire, comme le note [docs/architecture.md](docs/architecture.md) §15.
+**État actuel :** UC8 (gérer son profil), UC1 (publier un trajet) et UC3 (réserver une place) sont complets : la
+réservation consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans
+surréservation possible, et `bookings.ride_id` référence `rides(id)` (ADR 0004).
 
 Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
 
