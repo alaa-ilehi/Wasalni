@@ -119,7 +119,7 @@ func TestConsulterTrajetRenvoieLeConducteurEtUneNoteNeutre(t *testing.T) {
 	}
 	note, present := conducteur["rating"]
 	if !present || note != nil {
-		t.Errorf("note = %v (présent : %v), attendu null tant que UC6 n'est pas livré", note, present)
+		t.Errorf("note = %v (présent : %v), attendu null sans évaluation", note, present)
 	}
 }
 
@@ -137,6 +137,7 @@ func TestConsulterTrajetIntrouvableOuTermineRenvoie404(t *testing.T) {
 		Details: application.NouveauConsulterTrajet(
 			trajetsEnMemoire{"t1": {Identifiant: "t1", Conducteur: "alice", Statut: domain.TrajetTermine}},
 			profilsEnMemoire{},
+			evaluationsEnMemoire{},
 		),
 	}))
 	defer serveurTermine.Close()

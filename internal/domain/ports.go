@@ -27,3 +27,12 @@ type ReservationRepository interface {
 	// ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne.
 	ParPassager(ctx context.Context, passager string) ([]Reservation, error)
 }
+
+// EvaluationRepository : écriture et agrégation des évaluations de UC6.
+// Contrat : Enregistrer échoue avec domain.ErrEvaluationDejaFaite si le couple
+// (trajet, évaluateur, cible) existe déjà ; Moyenne rend la note moyenne arrondie à une décimale
+// et le nombre d'évaluations reçues par l'utilisateur (zéro si aucune).
+type EvaluationRepository interface {
+	Enregistrer(ctx context.Context, e Evaluation) (Evaluation, error)
+	Moyenne(ctx context.Context, identifiant string) (float64, int, error)
+}

@@ -20,6 +20,7 @@ type Deps struct {
 	Trajets      application.PublierTrajet
 	Details      application.ConsulterTrajet
 	Reservations application.ReserverPlace
+	Evaluations  application.EvaluerParticipant
 }
 
 // Routes construit le routeur HTTP du service (Go 1.22 : motifs avec méthode).
@@ -34,6 +35,7 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details))
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
+	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations))
 	return mux
 }
 
@@ -146,7 +148,7 @@ func trajetVersJSON(t domain.Trajet) trajetJSON {
 	}
 }
 
-// conducteurJSON : informations UC8 montrées par UC7. Note nil → null tant que UC6 n'est pas livré.
+// conducteurJSON : informations UC8 montrées par UC7. Note nil → aucune évaluation UC6 reçue.
 type conducteurJSON struct {
 	Nom   string   `json:"name"`
 	Sexe  string   `json:"sex,omitempty"`
@@ -177,6 +179,7 @@ func consulterTrajet(consulter application.ConsulterTrajet) http.HandlerFunc {
 				Sexe:  string(detail.Profil.Sexe),
 				Age:   detail.Profil.Age,
 				Photo: detail.Profil.Photo,
+				Note:  detail.Note,
 			}
 		}
 		repondreJSON(w, http.StatusOK, reponse)

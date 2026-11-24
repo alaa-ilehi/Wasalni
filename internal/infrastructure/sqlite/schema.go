@@ -54,12 +54,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS bookings_active_unique
     ON bookings (ride_id, passenger) WHERE status = 'ACTIVE';
 `
 
+// Schema des évaluations (UC6). Une seule note par couple (trajet, évaluateur, cible) ;
+// la moyenne affichée par UC7 est calculée à la lecture, sans colonne redondante sur users.
+const schemaEvaluation = `
+CREATE TABLE IF NOT EXISTS ratings (
+    id         TEXT PRIMARY KEY,
+    ride_id    TEXT NOT NULL REFERENCES rides(id),
+    evaluator  TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    score      INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+    comment    TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ratings_unique
+    ON ratings (ride_id, evaluator, target);
+`
+
 // AppliquerSchema crée les tables manquantes. Rejouable sur une base existante.
 func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 	for _, table := range []struct{ nom, ddl string }{
 		{"users", schemaProfil},
 		{"rides", schemaTrajet},
 		{"bookings", schemaReservation},
+		{"ratings", schemaEvaluation},
 	} {
 		if _, err := db.ExecContext(ctx, table.ddl); err != nil {
 			return fmt.Errorf("application du schéma %s : %w", table.nom, err)

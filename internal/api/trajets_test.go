@@ -36,7 +36,7 @@ func bancTrajets(t *testing.T) *httptest.Server {
 	trajets := sqlite.NouveauTrajetRepository(db)
 	publier := application.NouveauPublierTrajet(trajets, horlogeFigee{})
 	rechercher := application.NouveauRechercherTrajets(trajets)
-	consulter := application.NouveauConsulterTrajet(trajets, profils)
+	consulter := application.NouveauConsulterTrajet(trajets, profils, evaluationsEnMemoire{})
 	reserver := application.NouveauReserverPlace(
 		trajets,
 		sqlite.NouveauReservationRepository(db),

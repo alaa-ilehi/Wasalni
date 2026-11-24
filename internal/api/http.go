@@ -20,8 +20,12 @@ func statutHTTP(err error) int {
 	case errors.Is(err, domain.ErrProfilIntrouvable),
 		errors.Is(err, domain.ErrTrajetIntrouvable):
 		return http.StatusNotFound
+	case errors.Is(err, domain.ErrNonParticipant):
+		return http.StatusForbidden
 	case errors.Is(err, domain.ErrTrajetComplet),
-		errors.Is(err, domain.ErrReservationDejaActive):
+		errors.Is(err, domain.ErrReservationDejaActive),
+		errors.Is(err, domain.ErrTrajetNonTermine),
+		errors.Is(err, domain.ErrEvaluationDejaFaite):
 		return http.StatusConflict
 	case errors.Is(err, domain.ErrNomRequis),
 		errors.Is(err, domain.ErrNomInvalide),
@@ -30,7 +34,8 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrTrajetInvalide),
 		errors.Is(err, domain.ErrConducteurNePeutPasReserver),
 		errors.Is(err, application.ErrPhotoInvalide),
-		errors.Is(err, application.ErrRechercheInvalide):
+		errors.Is(err, application.ErrRechercheInvalide),
+		errors.Is(err, domain.ErrEvaluationInvalide):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

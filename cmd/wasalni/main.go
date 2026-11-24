@@ -43,14 +43,17 @@ func main() {
 
 	// Un seul entrepôt de trajets sert les cas d'utilisation publication (UC1), recherche (UC2), lecture (UC3) et détails (UC7).
 	trajets := sqlite.NouveauTrajetRepository(db)
+	reservations := sqlite.NouveauReservationRepository(db)
+	evaluations := sqlite.NouveauEvaluationRepository(db)
 	publierTrajet := application.NouveauPublierTrajet(trajets, horlogeReelle{})
 	rechercherTrajets := application.NouveauRechercherTrajets(trajets)
-	consulterTrajet := application.NouveauConsulterTrajet(trajets, profils)
+	consulterTrajet := application.NouveauConsulterTrajet(trajets, profils, evaluations)
 	reserverPlace := application.NouveauReserverPlace(
 		trajets,
-		sqlite.NouveauReservationRepository(db),
+		reservations,
 		notifications.NouveauJournal(journal),
 	)
+	evaluerParticipant := application.NouveauEvaluerParticipant(trajets, reservations, evaluations)
 
 	serveur := &http.Server{
 		Addr: *adresse,
@@ -60,6 +63,7 @@ func main() {
 			Trajets:      publierTrajet,
 			Details:      consulterTrajet,
 			Reservations: reserverPlace,
+			Evaluations:  evaluerParticipant,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
