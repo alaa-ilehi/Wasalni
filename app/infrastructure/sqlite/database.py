@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from app.infrastructure.sqlite.schema import SCHEMA
+from app.infrastructure.sqlite.schema import RIDE_COLUMN_MIGRATIONS, SCHEMA
 
 
 class Database:
@@ -19,6 +19,10 @@ class Database:
         conn = self.connect()
         try:
             conn.executescript(SCHEMA)
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(rides)")}
+            for name, declaration in RIDE_COLUMN_MIGRATIONS:
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE rides ADD COLUMN {declaration}")
         finally:
             conn.close()
 

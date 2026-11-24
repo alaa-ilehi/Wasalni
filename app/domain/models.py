@@ -12,6 +12,13 @@ class BookingStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class RideStatus(str, Enum):
+    """Statut d'un trajet : publié, puis terminé (UC11)."""
+
+    PUBLISHED = "PUBLISHED"
+    COMPLETED = "COMPLETED"
+
+
 @dataclass
 class Ride:
     id: int
@@ -22,23 +29,30 @@ class Ride:
     seats_total: int
     seats_available: int
     price: float
+    cancel_delay_hours: float = 2       # X de UC1, en heures
+    status: RideStatus = RideStatus.PUBLISHED
 
     def __post_init__(self) -> None:
         if self.seats_total < 1:
             raise ValueError("seats_total must be >= 1")
         if not 0 <= self.seats_available <= self.seats_total:
             raise ValueError("seats_available must be within 0..seats_total")
+        self.status = RideStatus(self.status)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "driver": self.driver,
+            "driver_id": self.driver,       # alias demandé par la fiche UC1
             "origin": self.origin,
             "destination": self.destination,
             "departure": self.departure,
+            "departure_time": self.departure,  # alias demandé par la fiche UC1
             "seats_total": self.seats_total,
             "seats_available": self.seats_available,
             "price": self.price,
+            "cancel_delay_hours": self.cancel_delay_hours,
+            "status": self.status.value,
         }
 
 

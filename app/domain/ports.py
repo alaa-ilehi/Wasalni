@@ -13,7 +13,8 @@ from app.domain.models import Booking, Ride
 @runtime_checkable
 class RideRepository(Protocol):
     def create(self, driver: str, origin: str, destination: str, departure: str,
-               seats: int, price: float) -> Ride: ...
+               seats: int, price: float, cancel_delay_hours: float = 2,
+               status: str = "PUBLISHED") -> Ride: ...
 
     def get(self, ride_id: int) -> Optional[Ride]: ...
 
