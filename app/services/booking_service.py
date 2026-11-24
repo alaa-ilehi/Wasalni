@@ -16,5 +16,5 @@ class BookingService:
         if ride.driver == passenger:
             raise InvalidBooking("a driver cannot book a seat on their own ride")
         booking = self.bookings.book_seat(ride_id, passenger)   # may raise RideFull / DuplicateBooking
-        self.notifier.notify(passenger, f"Seat held on ride #{ride_id}: pay booking #{booking.id} to confirm")
+        self.notifier.notify(passenger, f"Seat held on ride #{ride_id} (booking #{booking.id})")
         return booking

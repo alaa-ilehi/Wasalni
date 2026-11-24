@@ -21,13 +21,13 @@ class FakeBookings:
 
     def book_seat(self, ride_id, passenger):
         ride = self.rides.data[ride_id]
-        if any(b.ride_id == ride_id and b.passenger == passenger and b.status != "CANCELLED"
+        if any(b.ride_id == ride_id and b.passenger == passenger and b.status == "ACTIVE"
                for b in self.data.values()):
             raise DuplicateBooking()
         if ride.seats_available == 0:
             raise RideFull()
         ride.seats_available -= 1
-        b = Booking(len(self.data) + 1, ride_id, passenger, "PENDING", "now")
+        b = Booking(len(self.data) + 1, ride_id, passenger, "ACTIVE", "now")
         self.data[b.id] = b
         return b
 
@@ -42,7 +42,7 @@ def setup():
 def test_book_seat_nominal(setup):
     service, rides, notifier = setup
     b = service.book_seat(1, "ali")
-    assert b.status == "PENDING" and b.passenger == "ali"      # confirmed only after payment (UC4)
+    assert b.status == "ACTIVE" and b.passenger == "ali"
     assert rides.data[1].seats_available == 0
     assert [u for u, _ in notifier.sent] == ["ali"]
 

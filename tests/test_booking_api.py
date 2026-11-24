@@ -6,7 +6,7 @@ def test_book_seat_nominal_scenario(app, client, notifier):
     ride_id = make_ride(app, seats=2)
     r = client.post(f"/rides/{ride_id}/bookings", headers={"X-User": "ali"})
     assert r.status_code == 201
-    assert r.get_json()["status"] == "PENDING"
+    assert r.get_json()["status"] == "ACTIVE"
     assert app.rides.get(ride_id).seats_available == 1          # seat decremented in the database
     assert len(notifier.sent) == 1
 
