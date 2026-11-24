@@ -255,7 +255,7 @@ func TestPhotoIllisible(t *testing.T) {
 
 func TestCorpsTropVolumineux(t *testing.T) {
 	b := nouveauBanc(t)
-	enorme := strings.Repeat("A", photos.TailleMaxCorps+1024)
+	enorme := strings.Repeat("A", api.TailleMaxCorps+1024)
 	statut, _ := b.appel(t, http.MethodPut, "/profile", "alice",
 		corpsProfil("Alice", 27, "", pointer(enorme)))
 	if statut != http.StatusRequestEntityTooLarge {

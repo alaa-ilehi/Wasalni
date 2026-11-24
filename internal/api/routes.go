@@ -8,8 +8,10 @@ import (
 
 	"github.com/alaa-ilehi/wasalni/internal/application"
 	"github.com/alaa-ilehi/wasalni/internal/domain"
-	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 )
+
+// TailleMaxCorps borne le corps HTTP accepté par PUT /profile (10 Mio, ADR 0008).
+const TailleMaxCorps = 10 << 20
 
 // profilJSON : représentation publique du profil, en anglais comme le reste du contrat HTTP.
 type profilJSON struct {
@@ -71,7 +73,7 @@ func enregistrerProfil(gerer application.GererProfil) http.HandlerFunc {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, photos.TailleMaxCorps)
+		r.Body = http.MaxBytesReader(w, r.Body, TailleMaxCorps)
 		var saisie application.SaisieProfil
 		decodeur := json.NewDecoder(r.Body)
 		decodeur.DisallowUnknownFields()

@@ -26,7 +26,7 @@ Le pipeline vit dans `internal/infrastructure/photos` (`Normaliser`) :
   256, 192, 128 — et l'image est réencodée à chaque essai.
 - **Refus seulement si c'est impossible.** L'image n'est refusée (`ErrImageTropLourde`, `400`) qu'à 128 px si le PNG
   dépasse encore 512 Kio. Une image illisible ou d'un format non reconnu donne `ErrImageIllisible` (`400`).
-- **Entrée bornée avant décodage.** Le corps de la requête est limité à 10 Mio (`photos.TailleMaxCorps`) par
+- **Entrée bornée avant décodage.** Le corps de la requête est limité à 10 Mio (`api.TailleMaxCorps`) par
   `http.MaxBytesReader` ; au-delà, `413`. Le préfixe d'une data URL (`data:image/…;base64,`) est accepté, ainsi que les
   retours à la ligne.
 - **Recadrage côté navigateur prévu plus tard.** Le service ne recadre pas et ne détecte pas de visage : il réduit et

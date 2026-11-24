@@ -31,9 +31,10 @@ convention de nommage.
   revient à écrire un fichier dans `internal/application` et à réutiliser des ports ; les dépendances se vérifient à la
   lecture des imports ; le compilateur signale une dépendance interdite dès qu'elle est écrite.
 - **Négatif :** une indirection de plus (interfaces, adaptateurs) et davantage de fichiers pour un petit système.
-- **Entorse assumée :** `internal/api` importe `internal/infrastructure/photos`, uniquement pour la constante de taille
-  maximale du corps et les erreurs du pipeline. L'alternative — dupliquer la limite et retraduire les erreurs — rendrait
-  deux sources de vérité. L'adaptateur n'importe jamais `internal/infrastructure/sqlite`.
+- **Sens des imports, vérifié :** `internal/api` n'importe que `internal/application` et `internal/domain`. La borne du
+  corps HTTP lui appartient (`api.TailleMaxCorps`) et les erreurs du pipeline sont retraduites par le cas d'usage en
+  `application.ErrPhotoInvalide` : aucune couche interne n'est connue de l'interface, et il n'y a pas deux sources de
+  vérité.
 - **Accepté parce que** le projet doit livrer 12 UC : le coût d'indirection est payé une fois, la structure sert ensuite.
 
 ## Alternatives écartées

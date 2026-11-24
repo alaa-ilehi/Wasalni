@@ -4,10 +4,15 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/alaa-ilehi/wasalni/internal/domain"
 )
+
+// Erreur d'application : la photo fournie est inutilisable (illisible ou impossible à ramener sous la limite).
+// Elle traduit l'erreur du port de normalisation pour que l'interface n'ait pas à connaître l'infrastructure.
+var ErrPhotoInvalide = errors.New("photo invalide")
 
 // NormaliseurPhoto : port de traitement d'image (décodage, réduction, encodage).
 type NormaliseurPhoto interface {
@@ -66,7 +71,7 @@ func (g GererProfil) Enregistrer(ctx context.Context, identifiant string, saisie
 		} else {
 			normalisee, err := g.photos.Normaliser(*saisie.Photo)
 			if err != nil {
-				return domain.Profil{}, false, err
+				return domain.Profil{}, false, fmt.Errorf("%w : %v", ErrPhotoInvalide, err)
 			}
 			profil.Photo = normalisee
 		}

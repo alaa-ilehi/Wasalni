@@ -45,7 +45,7 @@ reste une donnée de confiance (ADR 0002).
 | Conteneur | Contenu | Dépend de |
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
-| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`), lecture de `X-User`, décodage JSON, table erreur → code HTTP | `internal/application`, `internal/domain`, `internal/infrastructure/photos` |
+| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
 | `internal/application` | cas d'utilisation UC8 `GererProfil` | `internal/domain` |
 | `internal/domain` | entité `Profil`, règles de validation, erreurs, port `ProfilRepository` | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateur du port de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
@@ -74,8 +74,9 @@ Règles de dépendance vérifiables à la lecture des imports :
 - `internal/application` importe `internal/domain` uniquement.
 - `internal/infrastructure/sqlite` importe `internal/domain`, `database/sql` et `modernc.org/sqlite` ;
   `internal/infrastructure/photos` n'importe que la bibliothèque standard.
-- `internal/api` importe `internal/application`, `internal/domain` et — unique entorse, explicite — `internal/infrastructure/photos`,
-  pour la taille maximale du corps et les erreurs du pipeline. Il n'importe jamais `internal/infrastructure/sqlite`.
+- `internal/api` importe `internal/application` et `internal/domain` seulement ; il ne connaît ni `internal/infrastructure/sqlite`
+  ni `internal/infrastructure/photos` : la borne du corps lui appartient (`api.TailleMaxCorps`) et les erreurs du pipeline
+  sont retraduites par le cas d'usage en `application.ErrPhotoInvalide`.
 - `internal/` interdit l'import de ces paquets depuis l'extérieur du module.
 
 ## 6. Vue des composants
@@ -136,7 +137,7 @@ Règles du corps de requête :
   normalisée (§10) avant l'enregistrement.
 - Les champs inconnus sont refusés (`DisallowUnknownFields`) et un corps illisible donne `400` avec
   `{"error":"corps JSON invalide"}`.
-- Le corps est limité à 10 Mio (`photos.TailleMaxCorps` via `http.MaxBytesReader`) ; au-delà, `413`.
+- Le corps est limité à 10 Mio (`api.TailleMaxCorps` via `http.MaxBytesReader`) ; au-delà, `413`.
 - `id` n'est jamais fourni par le client : il vient de `X-User`. Un appelant ne peut donc lire ou écrire que sa propre
   ligne.
 
@@ -214,8 +215,7 @@ correspondance est la responsabilité de l'adaptateur (`internal/api/http.go`, A
 | `domain.ErrNomInvalide` | domaine | 400 |
 | `domain.ErrAgeInvalide` | domaine | 400 |
 | `domain.ErrSexeInvalide` | domaine | 400 |
-| `photos.ErrImageIllisible` | infrastructure (pipeline) | 400 |
-| `photos.ErrImageTropLourde` | infrastructure (pipeline) | 400 |
+| `application.ErrPhotoInvalide` | application (traduit `photos.ErrImageIllisible` et `photos.ErrImageTropLourde`) | 400 |
 | corps JSON invalide ou champ inconnu | adaptateur HTTP | 400 |
 | corps supérieur à 10 Mio | adaptateur HTTP (`http.MaxBytesReader`) | 413 |
 | toute autre erreur | infrastructure | 500, journalisée, message générique |

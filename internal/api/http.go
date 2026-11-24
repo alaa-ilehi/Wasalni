@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/alaa-ilehi/wasalni/internal/application"
 	"github.com/alaa-ilehi/wasalni/internal/domain"
-	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 )
 
 // statutHTTP est la seule table de correspondance erreur → code HTTP (ADR 0006).
@@ -23,8 +23,7 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrNomInvalide),
 		errors.Is(err, domain.ErrAgeInvalide),
 		errors.Is(err, domain.ErrSexeInvalide),
-		errors.Is(err, photos.ErrImageIllisible),
-		errors.Is(err, photos.ErrImageTropLourde):
+		errors.Is(err, application.ErrPhotoInvalide):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

@@ -95,7 +95,7 @@ package "internal/infrastructure/photos" {
 
   note right of Normaliser
     CoteMax 512 px, CoteMin 128 px, PasReduction 64 px
-    PoidsMax 512 Kio, TailleMaxCorps 10 Mio
+    PoidsMax 512 Kio
     PNG sans perte (png.BestCompression), box filter maison
   end note
 }

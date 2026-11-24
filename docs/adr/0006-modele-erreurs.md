@@ -18,7 +18,8 @@ hiérarchie de classes portant un attribut de statut.
   (`fmt.Errorf("… : %w", err)`) et restent reconnaissables par `errors.Is`.
 - L'adaptateur SQLite traduit `sql.ErrNoRows` en `domain.ErrProfilIntrouvable` : le domaine ne connaît pas `database/sql`.
 - Le pipeline photo déclare ses propres sentinelles, `ErrImageIllisible` et `ErrImageTropLourde`
-  (`internal/infrastructure/photos`).
+  (`internal/infrastructure/photos`) ; le cas d'usage les enveloppe en `application.ErrPhotoInvalide`, seule erreur que
+  l'adaptateur HTTP connaisse pour une photo refusée.
 - L'identité absente est une erreur de l'adaptateur HTTP, `api.ErrIdentiteManquante` : elle n'existe pas dans l'application
   (ADR 0002).
 - L'adaptateur HTTP porte l'**unique** table de correspondance erreur → code, la fonction `statutHTTP` de

@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// TailleMaxCorps est la limite du corps HTTP accepté par l'adaptateur (10 Mio).
-	TailleMaxCorps = 10 << 20
 	// CoteMax est le côté maximal du PNG stocké.
 	CoteMax = 512
 	// CoteMin est le plus petit côté essayé avant de refuser l'image.
