@@ -16,6 +16,7 @@ const TailleMaxCorps = 10 << 20
 // Deps regroupe les cas d'utilisation exposés par l'API. La racine de composition les fournit.
 type Deps struct {
 	Profils      application.GererProfil
+	Recherches   application.RechercherTrajets
 	Trajets      application.PublierTrajet
 	Reservations application.ReserverPlace
 }
@@ -28,6 +29,7 @@ func Routes(deps Deps) http.Handler {
 	})
 	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils))
 	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils))
+	mux.HandleFunc("GET /rides", rechercherTrajets(deps.Recherches))
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
 	return mux
@@ -139,6 +141,27 @@ func trajetVersJSON(t domain.Trajet) trajetJSON {
 		DelaiAnnulation: t.DelaiAnnulation.Hours(),
 		Statut:          string(t.Statut),
 		CreeLe:          t.CreeLe.UTC().Format(time.RFC3339),
+	}
+}
+
+// rechercherTrajets : GET /rides, aucun identifiant requis (UC2, aucune précondition).
+func rechercherTrajets(rechercher application.RechercherTrajets) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		parametres := r.URL.Query()
+		trajets, err := rechercher.Executer(r.Context(), domain.CriteresRecherche{
+			Origine:     parametres.Get("origin"),
+			Destination: parametres.Get("destination"),
+			Date:        parametres.Get("date"),
+		})
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		resultats := make([]trajetJSON, 0, len(trajets))
+		for _, trajet := range trajets {
+			resultats = append(resultats, trajetVersJSON(trajet))
+		}
+		repondreJSON(w, http.StatusOK, resultats)
 	}
 }
 

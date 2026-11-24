@@ -29,7 +29,8 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrSexeInvalide),
 		errors.Is(err, domain.ErrTrajetInvalide),
 		errors.Is(err, domain.ErrConducteurNePeutPasReserver),
-		errors.Is(err, application.ErrPhotoInvalide):
+		errors.Is(err, application.ErrPhotoInvalide),
+		errors.Is(err, application.ErrRechercheInvalide):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

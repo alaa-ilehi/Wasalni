@@ -110,3 +110,94 @@ func TestReserverNeDecrementePasEncoreLesPlaces(t *testing.T) {
 			relu.Places, relu.PlacesTotal)
 	}
 }
+
+func publierPourRecherche(t *testing.T, depot *sqlite.TrajetRepository, origine, destination string, depart time.Time, statut domain.StatutTrajet) {
+	t.Helper()
+	trajet := trajetAPublier()
+	trajet.Origine = origine
+	trajet.Destination = destination
+	trajet.Depart = depart
+	trajet.Statut = statut
+	if _, err := depot.Publier(context.Background(), trajet); err != nil {
+		t.Fatalf("publication de %s → %s : %v", origine, destination, err)
+	}
+}
+
+func identifiants(trajets []domain.Trajet) []string {
+	ids := make([]string, 0, len(trajets))
+	for _, trajet := range trajets {
+		ids = append(ids, trajet.Origine+"@"+trajet.Depart.Format("2006-01-02T15:04"))
+	}
+	return ids
+}
+
+func TestRechercherFiltreEtTrieLesTrajetsPublies(t *testing.T) {
+	ctx := context.Background()
+	depot, _, fermer := baseTrajet(t)
+	defer fermer()
+
+	publierPourRecherche(t, depot, "Lyon", "Grenoble", time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC), domain.TrajetPublie)
+	publierPourRecherche(t, depot, "Paris", "Lyon", time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC), domain.TrajetPublie)
+	publierPourRecherche(t, depot, "lyon", "grenoble", time.Date(2026, 11, 30, 9, 0, 0, 0, time.UTC), domain.TrajetPublie)
+	publierPourRecherche(t, depot, "Lyon", "Grenoble", time.Date(2026, 12, 1, 7, 0, 0, 0, time.UTC), domain.TrajetTermine)
+
+	cas := map[string]struct {
+		criteres domain.CriteresRecherche
+		attendu  []string
+	}{
+		"sans filtre, terminé exclu et tri par départ": {
+			criteres: domain.CriteresRecherche{},
+			attendu: []string{
+				"lyon@2026-11-30T09:00",
+				"Paris@2026-12-01T08:00",
+				"Lyon@2026-12-01T10:00",
+			},
+		},
+		"origine insensible à la casse": {
+			criteres: domain.CriteresRecherche{Origine: "LYON"},
+			attendu:  []string{"lyon@2026-11-30T09:00", "Lyon@2026-12-01T10:00"},
+		},
+		"destination insensible à la casse": {
+			criteres: domain.CriteresRecherche{Destination: "grenoble"},
+			attendu:  []string{"lyon@2026-11-30T09:00", "Lyon@2026-12-01T10:00"},
+		},
+		"date calendaire": {
+			criteres: domain.CriteresRecherche{Date: "2026-12-01"},
+			attendu:  []string{"Paris@2026-12-01T08:00", "Lyon@2026-12-01T10:00"},
+		},
+		"tous les filtres": {
+			criteres: domain.CriteresRecherche{Origine: "Lyon", Destination: "Grenoble", Date: "2026-12-01"},
+			attendu:  []string{"Lyon@2026-12-01T10:00"},
+		},
+	}
+	for nom, cas := range cas {
+		t.Run(nom, func(t *testing.T) {
+			trajets, err := depot.Rechercher(ctx, cas.criteres)
+			if err != nil {
+				t.Fatalf("recherche : %v", err)
+			}
+			obtenu := identifiants(trajets)
+			if len(obtenu) != len(cas.attendu) {
+				t.Fatalf("résultats = %v, attendu %v", obtenu, cas.attendu)
+			}
+			for i := range cas.attendu {
+				if obtenu[i] != cas.attendu[i] {
+					t.Errorf("résultat %d = %q, attendu %q (liste %v)", i, obtenu[i], cas.attendu[i], obtenu)
+				}
+			}
+		})
+	}
+}
+
+func TestRechercherSansResultatRendUneListeVide(t *testing.T) {
+	depot, _, fermer := baseTrajet(t)
+	defer fermer()
+
+	trajets, err := depot.Rechercher(context.Background(), domain.CriteresRecherche{Origine: "Nullepart"})
+	if err != nil {
+		t.Fatalf("recherche : %v", err)
+	}
+	if trajets == nil || len(trajets) != 0 {
+		t.Errorf("trajets = %v, attendu une liste vide non nil", trajets)
+	}
+}

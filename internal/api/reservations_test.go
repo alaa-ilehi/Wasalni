@@ -35,6 +35,11 @@ func (t trajetsEnMemoire) Publier(_ context.Context, trajet domain.Trajet) (doma
 	return trajet, nil
 }
 
+// Rechercher n'est pas utilisé par les tests de réservation ; la méthode complète le port.
+func (t trajetsEnMemoire) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
+	return nil, nil
+}
+
 type notificateurMuet struct{}
 
 func (notificateurMuet) NotifierReservation(context.Context, domain.Reservation) error { return nil }
