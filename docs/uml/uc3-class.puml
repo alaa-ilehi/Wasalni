@@ -32,7 +32,7 @@ class Booking {
   id
   ride_id
   passenger
-  status : PENDING | CONFIRMED | CANCELLED
+  status : ACTIVE | CANCELLED
   created_at
 }
 class AppError

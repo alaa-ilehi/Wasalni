@@ -15,12 +15,12 @@ CREATE TABLE IF NOT EXISTS bookings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ride_id     INTEGER NOT NULL REFERENCES rides(id),
     passenger   TEXT    NOT NULL,
-    status      TEXT    NOT NULL DEFAULT 'PENDING',   -- PENDING | CONFIRMED | CANCELLED
+    status      TEXT    NOT NULL DEFAULT 'ACTIVE',    -- ACTIVE | CANCELLED
     created_at  TEXT    NOT NULL
 );
--- one active (pending or confirmed) booking per passenger and ride
+-- one active booking per passenger and ride
 CREATE UNIQUE INDEX IF NOT EXISTS ux_active_booking
-    ON bookings(ride_id, passenger) WHERE status IN ('PENDING', 'CONFIRMED');
+    ON bookings(ride_id, passenger) WHERE status = 'ACTIVE';
 """
 
 

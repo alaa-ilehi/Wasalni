@@ -32,12 +32,12 @@ else
     BookingService --> Api : DuplicateBooking
     Api --> Passenger : 409
   else seat held
-    BookingRepository -> SQLite : INSERT booking (PENDING)
+    BookingRepository -> SQLite : INSERT booking (ACTIVE)
     BookingRepository -> SQLite : COMMIT
     BookingRepository --> BookingService : Booking
-    BookingService -> NotificationService : notify(passenger: pay to confirm)
+    BookingService -> NotificationService : notify(passenger: seat held)
     BookingService --> Api : Booking
-    Api --> Passenger : 201 Created (PENDING)
+    Api --> Passenger : 201 Created (ACTIVE)
   end
 end
 @enduml

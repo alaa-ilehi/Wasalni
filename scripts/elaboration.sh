@@ -41,24 +41,32 @@ echo "== 1d. One ticket per UC =="
 ticket() {  # title milestone body -> prints issue number
   gh issue create --title "$1" --milestone "$2" --body "$3" | grep -o '[0-9]*$'
 }
-N3=$(ticket "UC3 Book a seat (technical risk)"         Elaboration  "docs/uc3-book-seat.md - branch uc3-book-seat")
-N4=$(ticket "UC4 Pay for a booking (technical risk)"   Construction "branch uc4-pay-booking")
-N1=$(ticket "UC1 Post a ride"                          Construction "branch uc1-post-ride")
+N3=$(ticket "UC3 Book a seat (technical risk)"          Elaboration  "docs/uc3-book-seat.md - branch uc3-book-seat")
+N1=$(ticket "UC1 Post a ride"                           Construction "branch uc1-post-ride")
 N2=$(ticket "UC2 Search rides"                         Construction "branch uc2-search-rides")
+N7=$(ticket "UC7 View ride details"                    Construction "branch uc7-ride-details")
+N8=$(ticket "UC8 Manage profile"                       Construction "branch uc8-manage-profile")
+N13=$(ticket "UC13 Authenticate (external system)"      Construction "branch uc13-authenticate")
 N5=$(ticket "UC5 Cancel a booking"                     Transition   "branch uc5-cancel-booking")
-N6=$(ticket "UC6 Rate the driver"                      Transition   "branch uc6-rate-driver")
-echo "  UC3=#$N3 UC4=#$N4 UC1=#$N1 UC2=#$N2 UC5=#$N5 UC6=#$N6"
+N9=$(ticket "UC9 Edit or delete a published ride"      Transition   "branch uc9-edit-ride")
+N10=$(ticket "UC10 View my rides / bookings"            Transition   "branch uc10-my-rides")
+N11=$(ticket "UC11 Complete a ride"                     Transition   "branch uc11-complete-ride")
+N12=$(ticket "UC12 Receive notifications (external)"    Transition   "branch uc12-notifications")
+N6=$(ticket "UC6 Rate each other"                      Transition   "branch uc6-rate-each-other")
+UC_TICKETS="$N3 $N1 $N2 $N7 $N8 $N13 $N5 $N9 $N10 $N11 $N12 $N6"
+echo "  UC3=#$N3 UC1=#$N1 UC2=#$N2 UC7=#$N7 UC8=#$N8 UC13=#$N13"
+echo "  UC5=#$N5 UC9=#$N9 UC10=#$N10 UC11=#$N11 UC12=#$N12 UC6=#$N6"
 
 echo "== 1e. Project board (needs the 'project' scope) =="
 if P=$(gh project create --owner "@me" --title "$REPO_NAME board" --format json -q .number 2>/dev/null); then
-  for n in $N3 $N4 $N1 $N2 $N5 $N6; do
+  for n in $UC_TICKETS; do
     gh project item-add "$P" --owner "@me" --url "https://github.com/$R/issues/$n" >/dev/null
   done
   gh project link "$P" --owner "@me" --repo "$R" >/dev/null 2>&1 || true
-  echo "  board #$P created with the 6 tickets"
+  echo "  board #$P created with the 12 tickets"
 else
   echo "  Could not create the board. Run: gh auth refresh -s project   (or create it in the web UI:"
-  echo "  Projects -> New project -> Board, then add the 6 issues)"
+  echo "  Projects -> New project -> Board, then add the 12 issues)"
 fi
 
 echo "== 2-3. Branch uc3-book-seat: diagrams + baseline architecture + first tests =="
@@ -102,11 +110,13 @@ gh api -X PATCH "repos/$R/milestones/$(gh api "repos/$R/milestones?state=all" --
 echo "  milestone Elaboration closed"
 
 echo "== One branch per remaining UC =="
-for b in uc4-pay-booking uc1-post-ride uc2-search-rides uc5-cancel-booking uc6-rate-driver; do
+for b in uc1-post-ride uc2-search-rides uc5-cancel-booking uc6-rate-each-other \
+         uc7-ride-details uc8-manage-profile uc9-edit-ride uc10-my-rides \
+         uc11-complete-ride uc12-notifications uc13-authenticate; do
   git branch "$b" main
   git push origin "$b"
 done
 
 echo
 echo "Done. Tags: $(git tag | tr '\n' ' ')"
-echo "Next (Construction): git checkout uc4-pay-booking, add UC4, open a PR with 'Closes #$N4'."
+echo "Next (Construction): git checkout uc1-post-ride, add UC1, open a PR with 'Closes #$N1'."

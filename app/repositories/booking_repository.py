@@ -14,7 +14,7 @@ class BookingRepository:
         self.db = db
 
     def book_seat(self, ride_id, passenger):
-        """Atomically hold one seat and create a PENDING booking.
+        """Atomically hold one seat and create an ACTIVE booking.
 
         The decrement is a single conditional UPDATE inside a write transaction,
         so two concurrent requests can never take the last seat.
@@ -31,7 +31,7 @@ class BookingRepository:
             try:
                 cur = conn.execute(
                     "INSERT INTO bookings(ride_id, passenger, status, created_at)"
-                    " VALUES (?, ?, 'PENDING', ?)", (ride_id, passenger, _now()))
+                    " VALUES (?, ?, 'ACTIVE', ?)", (ride_id, passenger, _now()))
             except sqlite3.IntegrityError:
                 conn.execute("ROLLBACK")
                 raise DuplicateBooking("passenger already has a booking on this ride")
