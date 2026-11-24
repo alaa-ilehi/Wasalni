@@ -103,7 +103,7 @@ La phase **Inception** (points 1 à 4) a lieu avant l'itération 1.
 | Milestone | UC (tickets) | Branches | Tag |
 |---|---|---|---|
 | Inception | cadrage | `main` | `v0.0-inception` |
-| Elaboration | UC3 | `uc3-book-seat` | `v0.1-elaboration` |
+| Elaboration | UC3 (route de base) + architecture | `architecture-elaboration` | `v0.1-elaboration` |
 | Construction | UC13, UC1, UC2, UC7, UC8 | `uc13-authenticate`, `uc1-post-ride`, `uc2-search-rides`, `uc7-ride-details`, `uc8-manage-profile` | `v0.2-construction` |
 | Transition | UC5, UC9, UC10, UC11, UC12, UC6 | `uc5-cancel-booking`, `uc9-edit-ride`, `uc10-my-rides`, `uc11-complete-ride`, `uc12-notifications`, `uc6-rate-each-other` | `v1.0-transition` |
 
