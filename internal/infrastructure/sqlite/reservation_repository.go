@@ -106,7 +106,7 @@ ORDER BY created_at DESC, id DESC`
 	return reservations, nil
 }
 
-// nouvelIdentifiant : 128 bits aléatoires, pour ne pas dépendre d'un compteur partagé.
+// nouvelIdentifiant : 128 bits aléatoires, partagé par les réservations et les trajets, pour ne pas dépendre d'un compteur.
 func nouvelIdentifiant() (string, error) {
 	octets := make([]byte, 16)
 	if _, err := rand.Read(octets); err != nil {

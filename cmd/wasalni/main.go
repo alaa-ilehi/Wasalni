@@ -14,7 +14,6 @@ import (
 
 	"github.com/alaa-ilehi/wasalni/internal/api"
 	"github.com/alaa-ilehi/wasalni/internal/application"
-	"github.com/alaa-ilehi/wasalni/internal/domain"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/notifications"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
@@ -41,11 +40,11 @@ func main() {
 
 	gererProfil := application.NouveauGererProfil(sqlite.NouveauProfilRepository(db), normaliseurPhoto{})
 
-	// Les trajets appartiennent à UC1/UC2 : tant que la table rides n'existe pas, l'adaptateur
-	// provisoire répond « trajet introuvable » et le dit une fois au démarrage.
-	journal.Warn("aucun entrepôt de trajets : POST /rides/{id}/bookings répondra 404 jusqu'à la livraison de UC1/UC2")
+	// Un seul entrepôt de trajets sert les deux cas d'utilisation : publication (UC1) et lecture (UC3).
+	trajets := sqlite.NouveauTrajetRepository(db)
+	publierTrajet := application.NouveauPublierTrajet(trajets, horlogeReelle{})
 	reserverPlace := application.NouveauReserverPlace(
-		trajetsProvisoires{},
+		trajets,
 		sqlite.NouveauReservationRepository(db),
 		notifications.NouveauJournal(journal),
 	)
@@ -54,6 +53,7 @@ func main() {
 		Addr: *adresse,
 		Handler: api.Routes(api.Deps{
 			Profils:      gererProfil,
+			Trajets:      publierTrajet,
 			Reservations: reserverPlace,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -79,12 +79,10 @@ func main() {
 	}
 }
 
-// trajetsProvisoires : adaptateur temporaire du port TrajetRepository, en attendant la table rides (UC1/UC2).
-type trajetsProvisoires struct{}
+// horlogeReelle adapte l'heure système au port application.Horloge.
+type horlogeReelle struct{}
 
-func (trajetsProvisoires) ParIdentifiant(context.Context, string) (domain.Trajet, error) {
-	return domain.Trajet{}, domain.ErrTrajetIntrouvable
-}
+func (horlogeReelle) Maintenant() time.Time { return time.Now().UTC() }
 
 // normaliseurPhoto adapte la fonction du paquet photos au port application.NormaliseurPhoto.
 type normaliseurPhoto struct{}

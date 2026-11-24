@@ -20,7 +20,26 @@ CREATE TABLE IF NOT EXISTS users (
 );
 `
 
-// Schema des réservations (UC3, périmètre réduit : pas de table rides, donc pas de clé étrangère).
+// Schema des trajets (UC1). L'identifiant est un texte aléatoire, comme celui des réservations.
+// cancel_delay_hours est en heures décimales ; status reste PUBLISHED jusqu'à UC11.
+const schemaTrajet = `
+CREATE TABLE IF NOT EXISTS rides (
+    id                 TEXT PRIMARY KEY,
+    driver             TEXT NOT NULL,
+    origin             TEXT NOT NULL,
+    destination        TEXT NOT NULL,
+    departure          TEXT NOT NULL,
+    seats_total        INTEGER NOT NULL CHECK (seats_total >= 1),
+    seats_available    INTEGER NOT NULL CHECK (seats_available >= 0 AND seats_available <= seats_total),
+    price              REAL    NOT NULL CHECK (price >= 0),
+    cancel_delay_hours REAL    NOT NULL DEFAULT 2 CHECK (cancel_delay_hours >= 0),
+    status             TEXT    NOT NULL DEFAULT 'PUBLISHED' CHECK (status IN ('PUBLISHED', 'COMPLETED')),
+    created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+`
+
+// Schema des réservations (UC3). bookings.ride_id n'a pas de clé étrangère vers rides :
+// la contrainte arrivera avec le décrément atomique des places (ADR 0004, issue de suivi de UC3).
 // La garantie « une seule réservation active par couple (trajet, passager) » est portée par l'index partiel.
 const schemaReservation = `
 CREATE TABLE IF NOT EXISTS bookings (
@@ -39,6 +58,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS bookings_active_unique
 func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 	for nom, ddl := range map[string]string{
 		"users":    schemaProfil,
+		"rides":    schemaTrajet,
 		"bookings": schemaReservation,
 	} {
 		if _, err := db.ExecContext(ctx, ddl); err != nil {

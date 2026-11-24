@@ -11,23 +11,33 @@ package "cmd/wasalni" {
 }
 
 package "internal/api" {
-  [Routes\nGET /health, GET /profile, PUT /profile] as Routes
+  [Routes\nGET /health, GET/PUT /profile\nPOST /rides, POST /rides/{id}/bookings] as Routes
   [identité\nen-tête X-User] as Identite
   [statutHTTP\ntable erreur -> code HTTP] as Statut
 }
 
 package "internal/application" {
   [GererProfil\n(cas d'utilisation UC8)] as GererProfil
+  [PublierTrajet\n(cas d'utilisation UC1)] as PublierTrajet
+  [ReserverPlace\n(cas d'utilisation UC3)] as ReserverPlace
   interface "NormaliseurPhoto" as INormaliseur
+  interface "Horloge" as IHorloge
+  interface "Notificateur" as INotificateur
 }
 
 package "internal/domain" {
   [Profil\nSexe, bornes, Valider()] as Profil
+  [Trajet\nstatut, places, ValiderPublication()] as Trajet
+  [Reservation\nACTIVE | CANCELLED] as Reservation
   interface "ProfilRepository" as IProfil
+  interface "TrajetRepository" as ITrajet
+  interface "ReservationRepository" as IReservation
 }
 
 package "internal/infrastructure/sqlite" {
   [ProfilRepository\n(adaptateur SQLite)] as SqlProfil
+  [TrajetRepository\n(adaptateur SQLite)] as SqlTrajet
+  [ReservationRepository\n(adaptateur SQLite)] as SqlReservation
   [Ouverture\npragmas + schéma idempotent] as Ouverture
 }
 
@@ -35,27 +45,54 @@ package "internal/infrastructure/photos" {
   [Normaliser\nbox filter + PNG sans perte] as Photos
 }
 
-database "SQLite\n(table users)" as DB
+package "internal/infrastructure/notifications" {
+  [Journal\nune ligne par réservation] as Journal
+}
+
+database "SQLite\n(tables users, rides, bookings)" as DB
 cloud "Système d'authentification\n(externe)" as ExternalAuth
+cloud "Système de notification\n(externe, non branché)" as ExternalNotif
 
 Client --> Routes : HTTP + en-tête X-User
 ExternalAuth ..> Client : identité
 
 Routes --> Identite : lit l'identité
 Routes --> GererProfil : Consulter / Enregistrer
+Routes --> PublierTrajet : Executer
+Routes --> ReserverPlace : Executer
 Routes ..> Statut : erreurs -> statut
 
 GererProfil ..> IProfil
 GererProfil ..> INormaliseur
 GererProfil ..> Profil : valide
 
+PublierTrajet ..> ITrajet
+PublierTrajet ..> IHorloge
+PublierTrajet ..> Trajet : valide
+
+ReserverPlace ..> ITrajet
+ReserverPlace ..> IReservation
+ReserverPlace ..> INotificateur
+ReserverPlace ..> Reservation : valide
+
 IProfil <|.. SqlProfil
+ITrajet <|.. SqlTrajet
+IReservation <|.. SqlReservation
 INormaliseur <|.. Photos
+INotificateur <|.. Journal
 
 SqlProfil --> DB : lecture / upsert transactionnel
+SqlTrajet --> DB : insertion / lecture d'un trajet
+SqlReservation --> DB : insertion sous index unique partiel
 SqlProfil ..> Ouverture : base ouverte et schéma appliqué
 
+Journal ..> ExternalNotif : appel prévu (UC12)
+
 Main --> SqlProfil : instancie
+Main --> SqlTrajet : instancie une fois,\npartagé par UC1 et UC3
+Main --> SqlReservation : instancie
 Main --> GererProfil : câble
+Main --> PublierTrajet : câble
+Main --> ReserverPlace : câble
 Main --> Routes : monte
 @enduml

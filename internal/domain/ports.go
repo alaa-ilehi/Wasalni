@@ -9,8 +9,11 @@ type ProfilRepository interface {
 	ParIdentifiant(ctx context.Context, identifiant string) (Profil, error)
 }
 
-// TrajetRepository : lecture des trajets. En écriture seule côté UC3 : la publication appartient à UC1.
+// TrajetRepository : publication d'un trajet (UC1) et lecture pour la réservation (UC3).
+// Contrat : Publier écrit un nouveau trajet et rend l'enregistrement créé, identifiant compris ;
+// ParIdentifiant échoue avec domain.ErrTrajetIntrouvable pour un identifiant inconnu.
 type TrajetRepository interface {
+	Publier(ctx context.Context, t Trajet) (Trajet, error)
 	ParIdentifiant(ctx context.Context, identifiant string) (Trajet, error)
 }
 

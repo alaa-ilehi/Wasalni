@@ -22,22 +22,6 @@ var (
 	ErrTrajetInvalide              = errors.New("trajet invalide")
 )
 
-// Trajet est la vue en lecture dont la réservation a besoin (UC3).
-// Elle ne porte que ce que le cas d'usage utilise ; le trajet complet viendra avec UC1/UC2.
-type Trajet struct {
-	Identifiant string
-	Conducteur  string
-	Places      int // places encore disponibles
-}
-
-// Valider refuse un trajet inexploitable tel quel.
-func (t Trajet) Valider() error {
-	if t.Identifiant == "" || t.Conducteur == "" {
-		return ErrTrajetInvalide
-	}
-	return nil
-}
-
 // Reservation : une place retenue par un passager sur un trajet.
 type Reservation struct {
 	Identifiant string
