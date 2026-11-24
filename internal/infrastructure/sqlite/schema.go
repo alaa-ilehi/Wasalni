@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS rides (
     price              REAL    NOT NULL CHECK (price >= 0),
     cancel_delay_hours REAL    NOT NULL DEFAULT 2 CHECK (cancel_delay_hours >= 0),
     status             TEXT    NOT NULL DEFAULT 'PUBLISHED' CHECK (status IN ('PUBLISHED', 'COMPLETED')),
-    created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    deleted_at         TEXT
 );
 `
 
@@ -83,6 +84,9 @@ func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("application du schéma %s : %w", table.nom, err)
 		}
 	}
+	if err := ajouterColonneSupprime(ctx, db); err != nil {
+		return err
+	}
 
 	// SQLite ne sait pas ajouter une contrainte à une table existante : une base créée avant la clé
 	// étrangère est reconstruite. La copie est stricte — une réservation orpheline fait échouer le
@@ -93,6 +97,32 @@ func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 	}
 	if !aCleEtrangere {
 		return reconstruireReservations(ctx, db)
+	}
+	return nil
+}
+
+func ajouterColonneSupprime(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(rides)")
+	if err != nil {
+		return fmt.Errorf("inspection du schéma rides : %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var def any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
+			return err
+		}
+		if name == "deleted_at" {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "ALTER TABLE rides ADD COLUMN deleted_at TEXT"); err != nil {
+		return fmt.Errorf("ajout de rides.deleted_at : %w", err)
 	}
 	return nil
 }

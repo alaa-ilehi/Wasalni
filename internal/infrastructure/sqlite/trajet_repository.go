@@ -67,7 +67,7 @@ func (r *TrajetRepository) Terminer(ctx context.Context, identifiant, conducteur
 
 	var trajet domain.Trajet
 	if trajet, err = lireTrajet(tx.QueryRowContext(ctx,
-		"SELECT "+colonnesTrajet+" FROM rides WHERE id = ?", identifiant)); err != nil {
+		"SELECT "+colonnesTrajet+" FROM rides WHERE id = ? AND deleted_at IS NULL", identifiant)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Trajet{}, domain.ErrTrajetIntrouvable
 		}
@@ -99,9 +99,72 @@ func (r *TrajetRepository) Terminer(ctx context.Context, identifiant, conducteur
 	return trajet, nil
 }
 
+// Modifier met à jour un trajet publié en conservant le nombre de places déjà réservées.
+func (r *TrajetRepository) Modifier(ctx context.Context, trajet domain.Trajet, conducteur string) (domain.Trajet, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Trajet{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	actuel, err := lireTrajet(tx.QueryRowContext(ctx, "SELECT "+colonnesTrajet+" FROM rides WHERE id = ? AND deleted_at IS NULL", trajet.Identifiant))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Trajet{}, domain.ErrTrajetIntrouvable
+	}
+	if err != nil {
+		return domain.Trajet{}, err
+	}
+	if err := actuel.ValiderTerminaison(conducteur); err != nil {
+		return domain.Trajet{}, err
+	}
+	var reservees int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM bookings WHERE ride_id = ? AND status = 'ACTIVE'", trajet.Identifiant).Scan(&reservees); err != nil {
+		return domain.Trajet{}, err
+	}
+	if trajet.PlacesTotal < reservees {
+		return domain.Trajet{}, domain.ErrPlacesInsuffisantes
+	}
+	trajet.Places = trajet.PlacesTotal - reservees
+	_, err = tx.ExecContext(ctx, `UPDATE rides SET origin=?, destination=?, departure=?, seats_total=?, seats_available=?, price=?, cancel_delay_hours=? WHERE id=? AND driver=? AND status='PUBLISHED' AND deleted_at IS NULL`,
+		trajet.Origine, trajet.Destination, trajet.Depart.UTC().Format(time.RFC3339), trajet.PlacesTotal, trajet.Places, trajet.Prix, trajet.DelaiAnnulation.Hours(), trajet.Identifiant, conducteur)
+	if err != nil {
+		return domain.Trajet{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Trajet{}, err
+	}
+	trajet.Conducteur, trajet.Statut, trajet.CreeLe = actuel.Conducteur, actuel.Statut, actuel.CreeLe
+	return trajet, nil
+}
+
+// Supprimer conserve la ligne et l'historique des réservations, tout en annulant les réservations actives.
+func (r *TrajetRepository) Supprimer(ctx context.Context, identifiant, conducteur string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	trajet, err := lireTrajet(tx.QueryRowContext(ctx, "SELECT "+colonnesTrajet+" FROM rides WHERE id=? AND deleted_at IS NULL", identifiant))
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrTrajetIntrouvable
+	}
+	if err != nil {
+		return err
+	}
+	if err := trajet.ValiderTerminaison(conducteur); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE bookings SET status='CANCELLED' WHERE ride_id=? AND status='ACTIVE'", identifiant); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE rides SET deleted_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?", identifiant); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // colonnesTrajet : projection partagée par la lecture par identifiant et par la recherche.
 const colonnesTrajet = `id, driver, origin, destination, departure, seats_total, seats_available,
-       price, cancel_delay_hours, status, created_at`
+       price, cancel_delay_hours, status, created_at, deleted_at`
 
 // scanneur : ce que partagent sql.Row et sql.Rows, pour ne pas dupliquer la conversion des colonnes.
 type scanneur interface {
@@ -114,6 +177,7 @@ func lireTrajet(row scanneur) (domain.Trajet, error) {
 	var (
 		trajet                    domain.Trajet
 		depart, statut, creeLe    string
+		supprimeLe                sql.NullString
 		delaiHeures               float64
 		placesTotal, placesLibres int
 	)
@@ -129,6 +193,7 @@ func lireTrajet(row scanneur) (domain.Trajet, error) {
 		&delaiHeures,
 		&statut,
 		&creeLe,
+		&supprimeLe,
 	); err != nil {
 		return domain.Trajet{}, err
 	}
@@ -144,12 +209,13 @@ func lireTrajet(row scanneur) (domain.Trajet, error) {
 	trajet.Places = placesLibres
 	trajet.DelaiAnnulation = time.Duration(delaiHeures * float64(time.Hour))
 	trajet.Statut = domain.StatutTrajet(statut)
+	trajet.Supprime = supprimeLe.Valid
 	return trajet, nil
 }
 
 // ParIdentifiant rend le trajet demandé, ou domain.ErrTrajetIntrouvable.
 func (r *TrajetRepository) ParIdentifiant(ctx context.Context, identifiant string) (domain.Trajet, error) {
-	requete := "SELECT " + colonnesTrajet + " FROM rides WHERE id = ?"
+	requete := "SELECT " + colonnesTrajet + " FROM rides WHERE id = ? AND deleted_at IS NULL"
 	trajet, err := lireTrajet(r.db.QueryRowContext(ctx, requete, identifiant))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -166,6 +232,7 @@ func (r *TrajetRepository) Rechercher(ctx context.Context, criteres domain.Crite
 	requete := "SELECT " + colonnesTrajet + `
 FROM rides
 WHERE status = 'PUBLISHED'
+  AND deleted_at IS NULL
   AND (? = '' OR LOWER(origin) = LOWER(?))
   AND (? = '' OR LOWER(destination) = LOWER(?))
   AND (? = '' OR SUBSTR(departure, 1, 10) = ?)

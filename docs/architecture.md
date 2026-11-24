@@ -2,13 +2,14 @@
 
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
-référence. Sept cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8 et UC11. Les décisions
+référence. Huit cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8, UC9 et UC11. Les décisions
 structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Sept sont livrés : UC8 (profil), UC1 (publier),
-  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC6 (évaluer les participants) et UC11
+- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Huit sont livrés : UC8 (profil), UC1 (publier),
+  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC6 (évaluer les participants), UC9
+  (modifier/supprimer un trajet) et UC11
   (terminer un trajet).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
@@ -430,7 +431,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC6 | `EvaluerParticipant` (`internal/application/evaluer_participant.go`) | `TrajetRepository`, `ReservationRepository`, `EvaluationRepository` | implémenté : `POST /rides/{id}/ratings`, une note par couple, moyenne lue par UC7 (ADR 0010) |
 | UC11 | `TerminerTrajet` (`internal/application/terminer_trajet.go`) | `TrajetFinRepository`, `NotificateurFinTrajet` | implémenté : `POST /rides/{id}/complete`, transition unique `PUBLISHED` → `COMPLETED` |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
-| UC5, UC9, UC10 | — | — | non implémentés |
+| UC9 | `GererTrajet` (`internal/application/gerer_trajet.go`) | `TrajetGestionRepository` | implémenté : modification et suppression logique, réservations annulées en transaction |
+| UC5, UC10 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
@@ -452,8 +454,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Sept UC couverts.** UC8, UC1, UC2, UC7, UC3, UC6 et UC11 ont du code et des tests ; UC13 et UC12 restent partiels
-  (identité non vérifiée, journal au lieu d'un système de notification). UC5, UC9 et UC10 n'ont ni code ni test.
+- **Huit UC couverts.** UC8, UC1, UC2, UC7, UC3, UC6, UC9 et UC11 ont du code et des tests ; UC13 et UC12 restent partiels
+  (identité non vérifiée, journal au lieu d'un système de notification). UC5 et UC10 restent à faire.
 
 ## 16. Décisions (ADR)
 

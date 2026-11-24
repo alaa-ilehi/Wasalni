@@ -25,6 +25,12 @@ type TrajetFinRepository interface {
 	Terminer(ctx context.Context, identifiant, conducteur string) (Trajet, error)
 }
 
+// TrajetGestionRepository porte la modification et la suppression logique UC9.
+type TrajetGestionRepository interface {
+	Modifier(ctx context.Context, trajet Trajet, conducteur string) (Trajet, error)
+	Supprimer(ctx context.Context, identifiant, conducteur string) error
+}
+
 // ReservationRepository : écriture et lecture des réservations.
 // Contrat : Reserver échoue avec domain.ErrReservationDejaActive si une réservation ACTIVE existe déjà
 // pour le couple (trajet, passager) ; la garantie vient de l'index unique partiel, pas d'une lecture préalable.

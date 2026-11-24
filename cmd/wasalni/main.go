@@ -55,17 +55,19 @@ func main() {
 	)
 	evaluerParticipant := application.NouveauEvaluerParticipant(trajets, reservations, evaluations)
 	terminerTrajet := application.NouveauTerminerTrajet(trajets, notifications.NouveauJournal(journal))
+	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notifications.NouveauJournal(journal))
 
 	serveur := &http.Server{
 		Addr: *adresse,
 		Handler: api.Routes(api.Deps{
-			Profils:      gererProfil,
-			Recherches:   rechercherTrajets,
-			Trajets:      publierTrajet,
-			Details:      consulterTrajet,
-			Reservations: reserverPlace,
-			Terminaisons: terminerTrajet,
-			Evaluations:  evaluerParticipant,
+			Profils:        gererProfil,
+			Recherches:     rechercherTrajets,
+			Trajets:        publierTrajet,
+			Details:        consulterTrajet,
+			Reservations:   reserverPlace,
+			Terminaisons:   terminerTrajet,
+			GestionTrajets: gererTrajet,
+			Evaluations:    evaluerParticipant,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
