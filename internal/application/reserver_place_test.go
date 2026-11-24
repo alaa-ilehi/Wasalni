@@ -15,6 +15,20 @@ type trajetsFaux struct {
 	erreur error
 }
 
+func (t *trajetsFaux) Publier(_ context.Context, trajet domain.Trajet) (domain.Trajet, error) {
+	if t.erreur != nil {
+		return domain.Trajet{}, t.erreur
+	}
+	if t.parID == nil {
+		t.parID = map[string]domain.Trajet{}
+	}
+	if trajet.Identifiant == "" {
+		trajet.Identifiant = "t-publie"
+	}
+	t.parID[trajet.Identifiant] = trajet
+	return trajet, nil
+}
+
 func (t *trajetsFaux) ParIdentifiant(_ context.Context, identifiant string) (domain.Trajet, error) {
 	if t.erreur != nil {
 		return domain.Trajet{}, t.erreur

@@ -16,6 +16,7 @@ const TailleMaxCorps = 10 << 20
 // Deps regroupe les cas d'utilisation exposés par l'API. La racine de composition les fournit.
 type Deps struct {
 	Profils      application.GererProfil
+	Trajets      application.PublierTrajet
 	Reservations application.ReserverPlace
 }
 
@@ -27,6 +28,7 @@ func Routes(deps Deps) http.Handler {
 	})
 	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils))
 	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils))
+	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
 	return mux
 }
@@ -105,6 +107,71 @@ func enregistrerProfil(gerer application.GererProfil) http.HandlerFunc {
 			statut = http.StatusCreated
 		}
 		repondreJSON(w, statut, versJSON(profil))
+	}
+}
+
+// trajetJSON : représentation publique d'un trajet. Les clés suivent la fiche UC1
+// (driver_id, departure_time) ; le délai d'annulation est en heures décimales.
+type trajetJSON struct {
+	Identifiant     string  `json:"id"`
+	Conducteur      string  `json:"driver_id"`
+	Origine         string  `json:"origin"`
+	Destination     string  `json:"destination"`
+	Depart          string  `json:"departure_time"`
+	PlacesTotal     int     `json:"seats_total"`
+	Places          int     `json:"seats_available"`
+	Prix            float64 `json:"price"`
+	DelaiAnnulation float64 `json:"cancel_delay_hours"`
+	Statut          string  `json:"status"`
+	CreeLe          string  `json:"created_at"`
+}
+
+func trajetVersJSON(t domain.Trajet) trajetJSON {
+	return trajetJSON{
+		Identifiant:     t.Identifiant,
+		Conducteur:      t.Conducteur,
+		Origine:         t.Origine,
+		Destination:     t.Destination,
+		Depart:          t.Depart.UTC().Format(time.RFC3339),
+		PlacesTotal:     t.PlacesTotal,
+		Places:          t.Places,
+		Prix:            t.Prix,
+		DelaiAnnulation: t.DelaiAnnulation.Hours(),
+		Statut:          string(t.Statut),
+		CreeLe:          t.CreeLe.UTC().Format(time.RFC3339),
+	}
+}
+
+// publierTrajet : POST /rides, le conducteur identifié publie un trajet.
+func publierTrajet(publier application.PublierTrajet) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, TailleMaxCorps)
+		var saisie application.SaisieTrajet
+		decodeur := json.NewDecoder(r.Body)
+		decodeur.DisallowUnknownFields()
+		if err := decodeur.Decode(&saisie); err != nil {
+			var tropGrand *http.MaxBytesError
+			if errors.As(err, &tropGrand) {
+				repondreJSON(w, http.StatusRequestEntityTooLarge,
+					erreurJSON{Erreur: "corps de requête trop volumineux"})
+				return
+			}
+			repondreJSON(w, http.StatusBadRequest, erreurJSON{Erreur: "corps JSON invalide"})
+			return
+		}
+
+		trajet, err := publier.Executer(r.Context(), acteur, saisie)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusCreated, trajetVersJSON(trajet))
 	}
 }
 

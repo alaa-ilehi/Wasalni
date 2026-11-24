@@ -16,7 +16,7 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
 )
 
-// trajetsEnMemoire : le port TrajetRepository, alimenté par le test (la table rides n'existe pas encore).
+// trajetsEnMemoire : le port TrajetRepository en mémoire, alimenté par le test.
 type trajetsEnMemoire map[string]domain.Trajet
 
 func (t trajetsEnMemoire) ParIdentifiant(_ context.Context, identifiant string) (domain.Trajet, error) {
@@ -24,6 +24,14 @@ func (t trajetsEnMemoire) ParIdentifiant(_ context.Context, identifiant string) 
 	if !ok {
 		return domain.Trajet{}, domain.ErrTrajetIntrouvable
 	}
+	return trajet, nil
+}
+
+func (t trajetsEnMemoire) Publier(_ context.Context, trajet domain.Trajet) (domain.Trajet, error) {
+	if trajet.Identifiant == "" {
+		trajet.Identifiant = "t-" + trajet.Origine
+	}
+	t[trajet.Identifiant] = trajet
 	return trajet, nil
 }
 
