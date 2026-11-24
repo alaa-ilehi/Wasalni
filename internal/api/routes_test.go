@@ -35,7 +35,7 @@ func nouveauBanc(t *testing.T) *banc {
 	t.Cleanup(func() { db.Close() })
 
 	gerer := application.NouveauGererProfil(sqlite.NouveauProfilRepository(db), adaptateurPhoto{})
-	serveur := httptest.NewServer(api.Routes(gerer))
+	serveur := httptest.NewServer(api.Routes(api.Deps{Profils: gerer}))
 	t.Cleanup(serveur.Close)
 	return &banc{serveur: serveur}
 }

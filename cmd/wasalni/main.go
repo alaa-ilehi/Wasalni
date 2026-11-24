@@ -14,6 +14,8 @@ import (
 
 	"github.com/alaa-ilehi/wasalni/internal/api"
 	"github.com/alaa-ilehi/wasalni/internal/application"
+	"github.com/alaa-ilehi/wasalni/internal/domain"
+	"github.com/alaa-ilehi/wasalni/internal/infrastructure/notifications"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
 )
@@ -37,12 +39,23 @@ func main() {
 	}
 	defer db.Close()
 
-	profils := sqlite.NouveauProfilRepository(db)
-	gerer := application.NouveauGererProfil(profils, normaliseurPhoto{})
+	gererProfil := application.NouveauGererProfil(sqlite.NouveauProfilRepository(db), normaliseurPhoto{})
+
+	// Les trajets appartiennent à UC1/UC2 : tant que la table rides n'existe pas, l'adaptateur
+	// provisoire répond « trajet introuvable » et le dit une fois au démarrage.
+	journal.Warn("aucun entrepôt de trajets : POST /rides/{id}/bookings répondra 404 jusqu'à la livraison de UC1/UC2")
+	reserverPlace := application.NouveauReserverPlace(
+		trajetsProvisoires{},
+		sqlite.NouveauReservationRepository(db),
+		notifications.NouveauJournal(journal),
+	)
 
 	serveur := &http.Server{
-		Addr:              *adresse,
-		Handler:           api.Routes(gerer),
+		Addr: *adresse,
+		Handler: api.Routes(api.Deps{
+			Profils:      gererProfil,
+			Reservations: reserverPlace,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -64,6 +77,13 @@ func main() {
 	if err := serveur.Shutdown(delai); err != nil {
 		journal.Error("fermeture incomplète", "erreur", err)
 	}
+}
+
+// trajetsProvisoires : adaptateur temporaire du port TrajetRepository, en attendant la table rides (UC1/UC2).
+type trajetsProvisoires struct{}
+
+func (trajetsProvisoires) ParIdentifiant(context.Context, string) (domain.Trajet, error) {
+	return domain.Trajet{}, domain.ErrTrajetIntrouvable
 }
 
 // normaliseurPhoto adapte la fonction du paquet photos au port application.NormaliseurPhoto.

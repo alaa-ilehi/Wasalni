@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// schemaProfil : table des profils (UC8). Le schéma est idempotent, il est appliqué à chaque démarrage.
+// Schema des profils (UC8). Idempotent, appliqué à chaque démarrage.
 // Le sexe est facultatif (NULL) et la photo est un PNG encodé en base64, ou NULL.
 const schemaProfil = `
 CREATE TABLE IF NOT EXISTS users (
@@ -20,10 +20,30 @@ CREATE TABLE IF NOT EXISTS users (
 );
 `
 
-// AppliquerSchema crée la table des profils si elle n'existe pas encore.
+// Schema des réservations (UC3, périmètre réduit : pas de table rides, donc pas de clé étrangère).
+// La garantie « une seule réservation active par couple (trajet, passager) » est portée par l'index partiel.
+const schemaReservation = `
+CREATE TABLE IF NOT EXISTS bookings (
+    id         TEXT PRIMARY KEY,
+    ride_id    TEXT NOT NULL,
+    passenger  TEXT NOT NULL,
+    status     TEXT NOT NULL CHECK (status IN ('ACTIVE', 'CANCELLED')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS bookings_active_unique
+    ON bookings (ride_id, passenger) WHERE status = 'ACTIVE';
+`
+
+// AppliquerSchema crée les tables manquantes. Rejouable sur une base existante.
 func AppliquerSchema(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, schemaProfil); err != nil {
-		return fmt.Errorf("application du schéma : %w", err)
+	for nom, ddl := range map[string]string{
+		"users":    schemaProfil,
+		"bookings": schemaReservation,
+	} {
+		if _, err := db.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("application du schéma %s : %w", nom, err)
+		}
 	}
 	return nil
 }
