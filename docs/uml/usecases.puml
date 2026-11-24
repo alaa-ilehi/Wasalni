@@ -1,28 +1,56 @@
 @startuml
 left to right direction
-actor Driver
-actor Passenger
-actor "Payment Service" as Pay
-actor "Notification Service" as Notif
 
-rectangle "Carpooling" {
-  usecase "UC1 Post a ride" as UC1
-  usecase "UC2 Search rides" as UC2
-  usecase "UC3 Book a seat" as UC3
-  usecase "UC4 Pay for a booking" as UC4
-  usecase "UC5 Cancel a booking" as UC5
-  usecase "UC6 Rate the driver" as UC6
+actor Utilisateur
+actor Conducteur
+actor Passager
+actor "Système d'authentification" as Auth
+actor "Système de notification" as Notif
+
+Conducteur --|> Utilisateur
+Passager --|> Utilisateur
+
+rectangle "Covoiturage (Wasalni)" {
+  usecase "Publier un trajet" as UC1
+  usecase "Rechercher des trajets" as UC2
+  usecase "Réserver une place" as UC3
+  usecase "Annuler une réservation" as UC5
+  usecase "S'évaluer mutuellement" as UC6
+  usecase "Consulter les détails d'un trajet" as UC7
+  usecase "Gérer son profil" as UC8
+  usecase "Modifier ou supprimer un trajet publié" as UC9
+  usecase "Voir mes trajets / réservations" as UC10
+  usecase "Terminer un trajet" as UC11
+  usecase "Recevoir des notifications" as UC12
+  usecase "S'authentifier" as UC13
 }
 
-Driver --> UC1
-Passenger --> UC2
-Passenger --> UC3
-Passenger --> UC4
-Passenger --> UC5
-Passenger --> UC6
-UC4 --> Pay
-UC3 --> Notif
-UC4 --> Notif
-UC5 --> Notif
-UC4 ..> UC3 : <<precondition: PENDING booking>>
+Conducteur --> UC1
+Conducteur --> UC9
+Conducteur --> UC11
+Passager --> UC2
+Passager --> UC3
+Passager --> UC5
+Passager --> UC7
+Utilisateur --> UC6
+Utilisateur --> UC8
+Utilisateur --> UC10
+Utilisateur --> UC12
+Utilisateur --> UC13
+
+UC2 ..> UC7 : <<include>>
+UC3 ..> UC7 : <<include>>
+UC5 ..> UC10 : <<include>>
+UC6 ..> UC10 : <<include>>
+UC11 ..> UC10 : <<include>>
+
+UC13 --> Auth : <<externe>>
+UC1 ..> UC12 : <<include>>
+UC3 ..> UC12 : <<include>>
+UC5 ..> UC12 : <<include>>
+UC9 ..> UC12 : <<include>>
+UC11 ..> UC12 : <<include>>
+UC12 --> Notif
+
+Auth -[hidden]up-> Notif
 @enduml
