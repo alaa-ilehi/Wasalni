@@ -4,6 +4,7 @@ skinparam defaultTextAlignment left
 
 actor Passenger
 participant "HttpApi\n(app/api)" as Api
+participant "IdentityProvider\n(port)" as Identity
 participant "BookSeat\n(app/application)" as UC
 participant "RideRepository\n(port)" as Rides
 participant "BookingRepository\n(port)" as Bookings
@@ -11,10 +12,12 @@ database "SQLite\n(adaptateur)" as DB
 participant "NotificationPort\n(port)" as Notif
 
 Passenger -> Api : POST /rides/{id}/bookings\nX-User
-Api -> Api : extrait l'identite (actor)
-alt en-tete X-User absent
-  Api --> Passenger : 401 IdentityMissing
+Api -> Identity : current_actor()
+alt identite absente
+  Identity --> Api : IdentityMissing
+  Api --> Passenger : 401
 else identite presente
+  Identity --> Api : actor
   Api -> UC : execute(ride_id, actor)
   UC -> Rides : get(ride_id)
   Rides --> UC : Ride | None

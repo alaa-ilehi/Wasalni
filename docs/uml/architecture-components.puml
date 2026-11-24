@@ -8,6 +8,7 @@ actor "Client\n(interface web FR)" as Client
 
 package "Interface - app/api" {
   [HttpApi\n(blueprint Flask, erreurs -> HTTP)] as HttpApi
+  [HeaderIdentityProvider] as HeaderIdentity
 }
 
 package "Application - app/application" {
@@ -19,6 +20,7 @@ package "Domaine - app/domain" {
   interface "RideRepository" as IRide
   interface "BookingRepository" as IBooking
   interface "NotificationPort" as INotif
+  interface "IdentityProvider" as IIdentity
   interface "Clock" as IClock
 }
 
@@ -31,16 +33,18 @@ package "Infrastructure - app/infrastructure" {
 
 database "SQLite" as DB
 cloud "Systeme de notification\n(externe)" as ExternalNotif
-cloud "Systeme d'authentification\n(externe, hors code)" as ExternalAuth
+cloud "Systeme d'authentification\n(externe)" as ExternalAuth
 
-Client --> HttpApi : HTTP + X-User
+Client --> HttpApi : HTTP + en-tete X-User
 ExternalAuth ..> Client : identite
+HttpApi --> IIdentity : current_actor()
 HttpApi --> BookSeat : execute(ride_id, actor)
 BookSeat ..> IRide
 BookSeat ..> IBooking
 BookSeat ..> INotif
 BookSeat ..> IClock
 
+IIdentity <|.. HeaderIdentity
 IRide <|.. SqlRide
 IBooking <|.. SqlBooking
 INotif <|.. Notif

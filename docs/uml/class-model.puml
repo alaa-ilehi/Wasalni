@@ -57,24 +57,34 @@ package "app/domain" {
     now() : str
   }
 
+  interface IdentityProvider {
+    current_actor() : str
+  }
+
   DomainError <|-- RideNotFound
   DomainError <|-- RideFull
   DomainError <|-- DuplicateBooking
   DomainError <|-- DriverCannotBook
   DomainError <|-- InvalidRide
   Ride --> Booking : 1..*
+  Booking --> BookingStatus
 }
 
 package "app/application" {
+  class ApplicationError {
+    message : str
+  }
+  class IdentityMissing
+  ApplicationError <|-- IdentityMissing
+
   class BookSeat {
     rides : RideRepository
     bookings : BookingRepository
     notifications : NotificationPort
     clock : Clock
     execute(ride_id, actor) : Booking
+    _notify(actor, message)
   }
-  class IdentityMissing
-  DomainError <|-- IdentityMissing
 }
 
 package "app/infrastructure" {
@@ -87,6 +97,9 @@ package "app/infrastructure" {
 }
 
 package "app/api" {
+  class HeaderIdentityProvider {
+    current_actor() : str
+  }
   class HttpApi {
     POST /rides/{id}/bookings
     + table erreur -> code HTTP
@@ -97,6 +110,7 @@ RideRepository <|.. SqliteRideRepository
 BookingRepository <|.. SqliteBookingRepository
 NotificationPort <|.. RecordingNotifications
 Clock <|.. SystemClock
+IdentityProvider <|.. HeaderIdentityProvider
 
 BookSeat ..> RideRepository
 BookSeat ..> BookingRepository
@@ -104,5 +118,7 @@ BookSeat ..> NotificationPort
 BookSeat ..> Clock
 BookSeat ..> Ride : verifie
 BookSeat ..> Booking : cree
+HttpApi --> IdentityProvider : current_actor()
 HttpApi --> BookSeat : execute
+IdentityMissing ..> HttpApi : 401
 @enduml

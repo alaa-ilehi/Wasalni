@@ -47,3 +47,13 @@ class Clock(Protocol):
     def now(self) -> str:
         """Instant courant en ISO 8601 UTC."""
         ...
+
+
+@runtime_checkable
+class IdentityProvider(Protocol):
+    def current_actor(self) -> str:
+        """Identité de l'appelant, fournie par le système d'authentification externe.
+
+        Lève IdentityMissing (erreur applicative) si aucune identité n'est fournie.
+        """
+        ...

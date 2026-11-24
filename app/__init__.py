@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from flask import Flask
 
 from app.api.http import bp
+from app.api.identity import HeaderIdentityProvider
 from app.application.book_seat import BookSeat
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.notifications import RecordingNotifications
@@ -26,6 +27,7 @@ class Container:
     bookings: SqliteBookingRepository
     notifications: RecordingNotifications
     clock: SystemClock
+    identity: HeaderIdentityProvider
     book_seat: BookSeat
 
 
@@ -43,6 +45,7 @@ def create_app(db_path: str = "carpooling.db", notifications=None) -> Flask:
         bookings=bookings,
         notifications=notifications,
         clock=clock,
+        identity=HeaderIdentityProvider(),
         book_seat=BookSeat(rides, bookings, notifications, clock),
     )
     app.register_blueprint(bp)

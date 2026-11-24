@@ -1,7 +1,7 @@
 """Adaptateur HTTP : routage, identité, correspondance erreur -> code HTTP."""
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify
 from werkzeug.exceptions import HTTPException
 
 from app.application.errors import IdentityMissing
@@ -34,11 +34,8 @@ def http_status(error: Exception) -> int:
 
 
 def current_actor() -> str:
-    """L'identité vient du système d'authentification externe, via l'en-tête X-User (ADR 0002)."""
-    actor = request.headers.get("X-User", "").strip()
-    if not actor:
-        raise IdentityMissing("en-tête X-User absent")
-    return actor
+    """L'identité vient du système d'authentification externe, via le port IdentityProvider (ADR 0002)."""
+    return current_app.container.identity.current_actor()
 
 
 @bp.app_errorhandler(IdentityMissing)

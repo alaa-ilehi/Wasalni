@@ -44,7 +44,7 @@ Règles de dépendance vérifiables par lecture des imports :
 - `domain` n'importe rien de `app` hors `domain`.
 - `application` importe `domain` uniquement.
 - `infrastructure` importe `domain` (ports, entités) mais jamais `application` ni `api`.
-- `api` importe `application` (cas d'utilisation) et les erreurs du domaine) mais jamais `infrastructure`.
+- `api` importe `application` (cas d'utilisation, erreurs applicatives) et `domain` (ports, erreurs) mais jamais `infrastructure`.
 
 ## 4. Vue des composants
 
@@ -55,6 +55,9 @@ Source : [uml/architecture-components.puml](uml/architecture-components.puml).
 Chaîne nominale d'UC3 : `HttpApi` (adaptateur) → `BookSeat` (application) → ports `RideRepository`,
 `BookingRepository`, `NotificationPort` → adaptateurs SQLite / notification.
 
+Identité : `HttpApi` → port `IdentityProvider` → `HeaderIdentityProvider` (lit `X-User`). L'identité traverse le port,
+pas le routeur (ADR 0002).
+
 ## 5. Ports et adaptateurs
 
 | Port (déclaré dans `domain/ports.py`) | Contrat | Adaptateur retenu |
@@ -63,12 +66,14 @@ Chaîne nominale d'UC3 : `HttpApi` (adaptateur) → `BookSeat` (application) →
 | `BookingRepository` | `book_seat(ride_id, passenger, created_at) -> Booking` (atomique), `get(id) -> Booking \| None` | `infrastructure/sqlite/booking_repository.py` |
 | `NotificationPort` | `send(destinataire, message, type_evenement)` sans exception remontée | `infrastructure/notifications.py` (enregistreur, système externe simulé) |
 | `Clock` | `now() -> str` (ISO 8601 UTC) | `infrastructure/clock.py` |
+| `IdentityProvider` | `current_actor() -> str`, lève `IdentityMissing` si l'identité manque | `api/identity.py` (`HeaderIdentityProvider`, lit `X-User`) |
 
 - **`Clock` existe** parce que UC5 aura besoin de comparer l'instant courant à `départ - X` et parce que les tests
   doivent pouvoir fixer le temps sans toucher au domaine.
-- **L'identité n'est pas un port** : `X-User` est un détail de transport, extrait par l'adaptateur HTTP qui le passe
-  explicitement en argument (`actor`) au cas d'utilisation. Aucun objet « utilisateur courant » ne circule dans l'application.
-- Un port n'est ajouté que s'il a **deux implémentations réelles** (production + test) ou un système externe derrière.
+- **`IdentityProvider` existe** parce que l'authentification est un système externe (UC13) : il évite que la frontière
+  applicative dépendre d'un en-tête. Le contrat reçoit et rend des chaînes, jamais des objets de transport.
+- Un port n'est ajouté que s'il a un **système externe derrière lui** (notification, authentification) ou **deux
+  implémentations réelles** (dépôts : SQLite et factices de test). Sinon c'est une abstraction spéculative.
 
 ## 6. Modèle de données
 
@@ -100,6 +105,15 @@ Invariants portés par le schéma ou par le domaine :
 - Une réservation n'existe que pour un trajet existant : clé étrangère activée (`PRAGMA foreign_keys = ON`).
 - Le domaine refuse une réservation sur son propre trajet (`DriverCannotBook`).
 
+### Modèle de classes (périmètre implémenté)
+
+![Modèle de classes](uml/class-model.png)
+
+Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** : entités et statut de
+réservation, deux hiérarchies d'erreurs séparées (`DomainError` pour le métier, `ApplicationError` pour l'application),
+ports et leurs adaptateurs, et usage de `BookSeat`. Il se maintient avec le code : un diagramme qui diverge de
+l'implémentation est un défaut, pas une illustration.
+
 ## 7. Concurrence et transactions
 
 Le risque technique du projet est la course sur la dernière place. Il est traité **en un seul endroit** :
@@ -124,7 +138,7 @@ responsabilité de l'adaptateur (`api/http.py`) :
 
 | Erreur | Origine | Code HTTP |
 |---|---|---|
-| `IdentityMissing` | application (identité absente) | 401 |
+| `IdentityMissing` | application, levée par l'adaptateur du port `IdentityProvider` | 401 |
 | `RideNotFound` | domaine | 404 |
 | `RideFull` | domaine | 409 |
 | `DuplicateBooking` | domaine (index unique) | 409 |
@@ -149,7 +163,7 @@ Le corps de réponse est `{"error": "<message>"}` — contrat conservé depuis U
 | UC10 | `ListMyRides` | `RideRepository`, `BookingRepository` |
 | UC11 | `CompleteRide` | `RideRepository`, `NotificationPort` |
 | UC12 | — (port utilisé par les autres UC) | `NotificationPort` |
-| UC13 | — (adaptateur HTTP) | — |
+| UC13 | — (port utilisé par la frontière HTTP) | `IdentityProvider` |
 
 ## 10. Écart avec l'implémentation actuelle
 
@@ -173,16 +187,18 @@ l'`UPDATE` conditionnel sous `BEGIN IMMEDIATE`, l'index unique partiel, le coupl
 | ADR | Décision |
 |---|---|
 | [0001](adr/0001-couches-et-ports.md) | Quatre couches, dépendances vers l'intérieur, ports déclarés par le domaine |
-| [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, transportée par `X-User`, extraite à la frontière |
+| [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, derrière le port `IdentityProvider` |
 | [0003](adr/0003-reservation-deux-etats.md) | Réservation à deux états, `ACTIVE` ou `CANCELLED`, sans étape de confirmation |
 | [0004](adr/0004-concurrence-sqlite.md) | Concurrence traitée par `BEGIN IMMEDIATE` + `UPDATE` conditionnel + index unique partiel |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM, DDL au démarrage, connexion par opération |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance dans l'adaptateur |
+| [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, encadrée, sans remise en cause de la réservation |
 
 ## 12. Limites connues et points ouverts
 
 - **Pas d'authentification applicative** : `X-User` est cru sur parole (décision du sujet, voir ADR 0002).
-- **Notification au mieux** : un échec du système externe est journalisé, jamais propagé (ADR 0003 / UC12).
+- **Notification au mieux** : un échec du système externe est journalisé, jamais propagé (ADR 0007 / UC12) ;
+  vérifié par `test_notification_failure_keeps_the_booking`.
 - **SQLite mono-fichier** : une instance par déploiement ; pas de réplication (ADR 0005).
 - **Read models** : UC10 (voir mes trajets) lira probablement avec des requêtes dédiées plutôt que les dépôts d'écriture ;
   à trancher à l'itération 3.

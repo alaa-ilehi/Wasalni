@@ -37,6 +37,13 @@ class FixedClock:
         return "2026-01-01T00:00:00+00:00"
 
 
+class FailingNotifications:
+    """Système externe indisponible : vérifie que la livraison au mieux ne casse rien."""
+
+    def send(self, recipient, message, event_type):
+        raise RuntimeError("système de notification indisponible")
+
+
 @pytest.fixture
 def setup():
     rides = FakeRides(Ride(1, "driver1", "Tunis", "Sfax", "2030-01-15T08:00", 1, 1, 20))
@@ -75,3 +82,11 @@ def test_duplicate_booking(setup):
     service.execute(1, "ali")
     with pytest.raises(DuplicateBooking):
         service.execute(1, "ali")
+
+
+def test_notification_failure_keeps_the_booking():
+    rides = FakeRides(Ride(1, "driver1", "Tunis", "Sfax", "2030-01-15T08:00", 2, 2, 20))
+    service = BookSeat(rides, FakeBookings(rides), FailingNotifications(), FixedClock())
+    b = service.execute(1, "ali")
+    assert b.status == "ACTIVE"
+    assert rides.data[1].seats_available == 1
