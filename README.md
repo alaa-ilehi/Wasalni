@@ -8,8 +8,7 @@
 implémenté sans décrément de places — la table `rides` existe, mais son compteur ne bouge pas encore, donc le décrément
 atomique et son test de concurrence restent à faire, comme le note [docs/architecture.md](docs/architecture.md) §15.
 
-Les tests se lancent avec `go test ./...`, puis `go test -race` sur `internal/domain`, `internal/application`,
-`internal/api` et `internal/infrastructure/sqlite`. La CI fait de même, après `go vet` et un contrôle `gofmt`.
+Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
 
 Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan),
 [docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation) et
@@ -123,6 +122,6 @@ La phase **Inception** (points 1 à 4) a lieu avant l'itération 1.
 (tickets, milestones, tableau de bord, branche `architecture-elaboration`, CI, tag `v0.1-elaboration`).
 `docs/elaboration-manual.md` donne les mêmes étapes à la main.
 
-Le contrôle local est `go vet ./...` puis `go test ./...` ; ce sont les deux commandes que la CI exécute.
+Le contrôle local est `go vet ./...` puis `go test -race ./...`, plus un contrôle `gofmt` ; ce sont les commandes que la CI exécute (build → vet → format → tests).
 
 a7la nes gafsa
