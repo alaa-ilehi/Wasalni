@@ -42,7 +42,7 @@ package "internal/infrastructure/sqlite" {
 }
 
 package "internal/infrastructure/photos" {
-  [Normaliser\nbox filter + PNG sans perte] as Photos
+  [Normaliser\nbox filter + WebP sans perte] as Photos
 }
 
 package "internal/infrastructure/notifications" {

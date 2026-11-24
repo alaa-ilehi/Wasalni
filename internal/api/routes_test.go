@@ -221,8 +221,8 @@ func TestPhotoNormaliseeALEnregistrement(t *testing.T) {
 		t.Errorf("photo stockée = %d octets, attendu au plus %d", len(brut), photos.PoidsMax)
 	}
 	img, format, err := image.Decode(bytes.NewReader(brut))
-	if err != nil || format != "png" {
-		t.Fatalf("photo stockée = %q (erreur %v), attendu un PNG", format, err)
+	if err != nil || format != "webp" {
+		t.Fatalf("photo stockée = %q (erreur %v), attendu un WebP", format, err)
 	}
 	if b := img.Bounds(); b.Dx() > photos.CoteMax || b.Dy() > photos.CoteMax {
 		t.Errorf("dimensions = %dx%d, attendu au plus %d", b.Dx(), b.Dy(), photos.CoteMax)
