@@ -7,13 +7,12 @@ une place), ce dernier sans décrément de places (§15). Les décisions structu
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Trois sont livrés : UC8 (gérer son profil), UC1
-  (publier un trajet) et UC3 (réserver une place). UC3 reste dans un périmètre réduit : les réservations sont écrites,
-  mais le décrément des places n'existe pas encore (§15).
+- **Périmètre fonctionnel :** les 12 cas d'utilisation de la vision. Cinq sont livrés : UC8 (gérer son profil), UC1
+  (publier un trajet), UC2 (rechercher), UC7 (consulter les détails) et UC3 (réserver une place, décrément compris).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
-  2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
-     réservations est aujourd'hui garantie par la base, le décrément atomique des places reste différé (ADR 0004) ;
+  2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : unicité des
+     réservations et décrément atomique des places sont garantis par la même transaction (ADR 0004) ;
   3. laisser une place explicite aux systèmes externes (authentification, notification) sans les simuler dans le domaine ;
   4. rendre l'ajout des UC restants mécanique : un cas d'utilisation = un fichier dans `internal/application`, plus des
      ports existants.
@@ -47,13 +46,13 @@ reste une donnée de confiance (ADR 0002).
 | Conteneur | Contenu | Dépend de |
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
-| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`, `POST /rides`, `POST /rides/{id}/bookings`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
-| `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet` et UC3 `ReserverPlace` | `internal/domain` |
+| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`, `GET /rides`, `GET /rides/{id}`, `POST /rides`, `POST /rides/{id}/bookings`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
+| `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC7 `ConsulterTrajet` et UC3 `ReserverPlace` | `internal/domain` |
 | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, règles de validation, erreurs, ports | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
 | `internal/infrastructure/photos` | normalisation de la photo : décodage, réduction, encodage PNG | bibliothèque standard seule |
 | `internal/infrastructure/notifications` | adaptateur du port `Notificateur` : une ligne de journal par réservation | `internal/domain`, `log/slog` |
-| Fichier SQLite | table `users` | — |
+| Fichier SQLite | tables `users`, `rides`, `bookings` ; clé étrangère `bookings.ride_id → rides(id)` | — |
 
 Il n'y a ni file d'attente, ni cache, ni service tiers dans le chemin d'une requête : un appel HTTP traverse l'adaptateur,
 le cas d'utilisation, puis la base.
@@ -131,6 +130,8 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `GET` | `/health` | — | — | `200` `{"statut":"ok"}` |
 | `GET` | `/profile` | `X-User` requis | — | `200` profil, `401` identité absente, `404` profil introuvable, `500` erreur inattendue |
 | `PUT` | `/profile` | `X-User` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
+| `GET` | `/rides` | — | — (`origin`, `destination`, `date` en query) | `200` liste triée par départ, `400` date invalide, `500` erreur inattendue |
+| `GET` | `/rides/{id}` | — | — | `200` trajet + conducteur (`driver`, `rating: null` tant que UC6 n'est pas livré), `404` trajet inconnu ou terminé, `500` erreur inattendue |
 | `POST` | `/rides` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `X-User` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` identité absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
 
@@ -185,13 +186,13 @@ Source : [uml/uc1-sequence.puml](uml/uc1-sequence.puml). Le diagramme suit le sc
 reste différé (ADR 0004).
 
 Ordre des contrôles d'une réservation : identité (`401`), trajet connu (`404`), trajet exploitable (`400`), passager distinct du
-conducteur (`400`), place disponible (`409`), puis écriture ; le doublon éventuel est refusé par l'index unique et rend
-`409`. Aucune place n'est décrémentée dans cette version (§15).
+conducteur (`400`), place disponible (`409`), puis écriture ; le doublon est refusé par l'index unique et la dernière
+place par l'`UPDATE` conditionnel, dans la même transaction (ADR 0004).
 
 ![Séquence UC3](uml/uc3-sequence.png)
 
-Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le comportement **livré** : la note finale
-rappelle le décrément différé, il ne doit pas être dessiné comme appliqué tant que la table `rides` n'existe pas.
+Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le comportement **livré**, décrément et clé
+étrangère compris.
 
 ## 9. Modèle de données
 
@@ -256,11 +257,10 @@ Invariants portés par le schéma ou par le domaine :
 - `bookings.status` est contraint à `ACTIVE` ou `CANCELLED` (ADR 0003) ; l'index partiel `bookings_active_unique`
   interdit deux réservations `ACTIVE` pour le même couple (trajet, passager), y compris sous appels simultanés.
 - `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` : `COMPLETED` attend UC11.
-- `rides.seats_available` démarre à `seats_total` et **ne bouge pas encore** : le décrément à la réservation est différé
-  (ADR 0004, §15). Un test fixe explicitement cette limite et devra être inversé avec le décrément.
-- `bookings.ride_id` n'a pas de clé étrangère vers `rides`, alors que la table existe désormais : la contrainte viendra
-  avec le décrément atomique, dans la même migration logique (issue de suivi de UC3). Sans elle, la base n'empêche pas
-  une réservation orpheline ; le cas d'usage, lui, lit toujours le trajet avant d'écrire.
+- `rides.seats_available` démarre à `seats_total` et est décrémenté dans la transaction de réservation : l'`UPDATE`
+  conditionnel (`seats_available > 0`) est l'autorité sur la dernière place (ADR 0004).
+- `bookings.ride_id` référence `rides(id)`. La contrainte est posée à la création et ajoutée par une migration idempotente
+  sur les bases existantes : une réservation orpheline est refusée par la base.
 
 Les tables des autres UC (évaluations, messages) n'existent pas encore : elles seront ajoutées avec les cas
 d'utilisation correspondants (§14).
@@ -379,24 +379,19 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC8 | `GererProfil` (`internal/application/gerer_profil.go`) | `ProfilRepository`, `NormaliseurPhoto` | implémenté |
 | UC13 | `identite` (`internal/api/identite.go`) : lecture de `X-User` | — | partiel : l'identité est lue, pas vérifiée (système externe) |
 | UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
-| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté, périmètre réduit : pas de décrément de places (ADR 0004, §15) |
+| UC2 | `RechercherTrajets` (`internal/application/rechercher_trajets.go`) | `TrajetRepository` (`Rechercher`) | implémenté : `GET /rides` (200/400) |
+| UC7 | `ConsulterTrajet` (`internal/application/consulter_trajet.go`) | `TrajetRepository` (`ParIdentifiant`), `ProfilRepository` | implémenté : `GET /rides/{id}` (200/404), `rating: null` tant que UC6 n'est pas livré |
+| UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté : décrément conditionnel et insertion atomiques dans la même transaction (ADR 0004) |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
-| UC2, UC5, UC6, UC7, UC9, UC10, UC11 | — | — | non implémentés |
+| UC5, UC6, UC9, UC10, UC11 | — | — | non implémentés |
 
 ## 15. Dette et limites connues
 
-- **Pas de décrément de places.** La table `rides` existe depuis UC1, mais `seats_available` reste à sa valeur de
-  publication : UC3 écrit des réservations sans toucher au compteur. Conséquence directe : le refus « trajet complet »
-  s'appuie sur la valeur lue et deux réservations simultanées sur la dernière place peuvent aboutir. Le décrément
-  conditionnel et son test de concurrence sont la dette suivie par l'issue de suivi de #12 ; le contrat du port
-  `ReservationRepository` ne changera pas (ADR 0004).
-- **Pas de clé étrangère sur `bookings.ride_id`.** Elle arrivera avec le décrément ; l'ordre d'écriture n'est donc pas
-  garanti par la base aujourd'hui.
-- **UC2 (consulter un trajet) n'a pas d'endpoint.** Le port `ParIdentifiant` existe et sert UC3, mais aucune route ne rend
-  un trajet publié ; c'est la prochaine brique naturelle.
 - **Photos stockées en base.** `users.photo` contient le PNG en base64 : environ un tiers de surcoût par rapport au
-  binaire, et l'image entière est relue et retransmise à chaque `GET /profile`. Acceptable pour une photo par profil, à
-  revoir quand UC7 lira le profil du conducteur.
+  binaire, et l'image entière est relue et retransmise à chaque `GET /profile` comme dans `GET /rides/{id}`. Acceptable
+  pour une photo par profil, à revoir si le volume grandit (ADR 0008).
+- **Note du conducteur non renseignée.** UC7 renvoie `rating: null` tant que UC6 n'est pas livré ; aucune note n'est
+  inventée côté lecture.
 - **Pas de frontend.** L'API est la seule surface ; le recadrage de la photo côté navigateur est prévu plus tard et n'est
   pas implémenté (ADR 0008).
 - **Pas d'authentification applicative.** `X-User` est cru sur parole : n'importe quel client connaissant un identifiant
@@ -418,7 +413,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | [0001](adr/0001-couches-et-ports.md) | Quatre couches en paquets Go, dépendances vers l'intérieur, ports déclarés par le domaine | accepté |
 | [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, lue dans `internal/api/identite.go` | accepté |
 | [0003](adr/0003-reservation-deux-etats.md) | Réservation à deux états, `ACTIVE` ou `CANCELLED`, sans étape de confirmation | appliqué |
-| [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel aujourd'hui, décrément conditionnel différé | partiellement appliqué |
+| [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel, décrément conditionnel et clé étrangère dans la même transaction | appliqué |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur | accepté |
 | [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 (adaptateur journal) |

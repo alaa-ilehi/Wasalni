@@ -4,9 +4,10 @@
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
-**État actuel :** UC8 (gérer son profil) et UC1 (publier un trajet) sont complets ; UC3 (réserver une place) est
-implémenté sans décrément de places — la table `rides` existe, mais son compteur ne bouge pas encore, donc le décrément
-atomique et son test de concurrence restent à faire, comme le note [docs/architecture.md](docs/architecture.md) §15.
+**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails d'un trajet) et UC3 (réserver) sont livrés.
+Le risque technique de UC3 est traité : places et réservations sont arbitrées dans une seule transaction SQLite, avec
+test de concurrence (voir [ADR 0004](docs/adr/0004-concurrence-sqlite.md)). UC6 n'est pas encore livré : UC7 renvoie
+donc `rating: null`.
 
 Les tests se lancent avec `go test ./...`, puis `go test -race` sur `internal/domain`, `internal/application`,
 `internal/api` et `internal/infrastructure/sqlite`. La CI fait de même, après `go vet` et un contrôle `gofmt`.

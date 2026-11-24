@@ -27,6 +27,7 @@
 - La décrémentation et l'insertion ont lieu dans une seule transaction.
 
 ## Tests
-- Unitaire (faux dépôts) : `tests/test_booking_service_unit.py`
-- Intégration (scénario nominal) : `test_book_seat_nominal_scenario` dans `tests/test_booking_api.py`
-- Risque : `tests/test_concurrency.py` (15 requêtes parallèles, 3 places : exactement 3 réussissent)
+- Application (faux dépôts) : `internal/application/reserver_place_test.go`
+- SQLite : `internal/infrastructure/sqlite/reservation_repository_test.go` — décrément, rollback sur doublon, clé étrangère et 8 appels concurrents sur 3 places (exactement 3 succès, 5 `409`)
+- Intégration HTTP : `internal/api/reservations_test.go` — 3×`201` et 5×`409`, puis `GET /rides/{id}` confirme 0 place disponible
+- Migration du schéma : `internal/infrastructure/sqlite/schema_test.go`

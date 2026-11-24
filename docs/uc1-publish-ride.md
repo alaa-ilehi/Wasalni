@@ -52,7 +52,7 @@ Un refus de validation rend `{"error":"trajet invalide : l'origine et la destina
 - `X` (`cancel_delay_hours`) est stocké sur le trajet, exprimé en heures décimales, par défaut 2 h ; il doit être positif ou nul et strictement inférieur au temps restant avant le départ. `X = 0` autorise une annulation jusqu'au départ (UC5). L'échéance est `departure - X`.
 - `seats_available` démarre à `seats_total` et le statut est `PUBLISHED` ; `COMPLETED` attend UC11.
 - Le schéma SQLite porte les invariants (`CHECK` sur places, prix, délai et statut, DDL dans [architecture.md](architecture.md#9-modèle-de-données)).
-- **Le décrément de `seats_available` est différé** (ADR 0004) : la publication écrit le compteur initial, UC3 ne le modifie pas encore. Le trajet publié est ensuite visible par la recherche (UC2) et lisible pour la réservation (UC3).
+- **Le décrément de `seats_available` est appliqué par UC3** (ADR 0004) : la publication écrit le compteur initial, UC3 le réduit ensuite dans la même transaction que la réservation. Le trajet publié est visible par la recherche (UC2) et lisible pour la réservation (UC3).
 
 ## Tests
 

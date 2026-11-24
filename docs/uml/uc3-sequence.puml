@@ -33,35 +33,43 @@ else trajet connu
   else
     UC -> Reservations : Reserver(Reservation ACTIVE)
     Reservations -> DB : BEGIN IMMEDIATE
-    Reservations -> DB : INSERT INTO bookings
-    alt index unique partiel violé
-      DB --> Reservations : SQLITE_CONSTRAINT_UNIQUE
+    Reservations -> DB : UPDATE rides SET seats_available = seats_available - 1 WHERE id = ? AND seats_available > 0
+    alt 0 ligne modifiée
+      DB --> Reservations : 0 ligne
       Reservations -> DB : ROLLBACK
-      Reservations --> UC : ErrReservationDejaActive
-      UC --> API : ErrReservationDejaActive
-      API --> Passager : 409 réservation déjà active
-    else insertion acceptée
-      DB --> Reservations : created_at
-      Reservations -> DB : COMMIT
-      Reservations --> UC : Reservation{id, ACTIVE}
-      UC -> Notif : NotifierReservation(...)
-      note right of UC
-        Au mieux (ADR 0007) : un échec
-        de notification ne défait pas
-        la réservation déjà validée.
-      end note
-      UC --> API : Reservation
-      API --> Passager : 201 {id, ride_id, passenger, status: ACTIVE, created_at}
+      Reservations --> UC : ErrTrajetComplet
+      UC --> API : ErrTrajetComplet
+      API --> Passager : 409 trajet complet
+    else 1 ligne modifiée
+      Reservations -> DB : INSERT INTO bookings
+      alt index unique partiel violé
+        DB --> Reservations : SQLITE_CONSTRAINT_UNIQUE
+        Reservations -> DB : ROLLBACK
+        Reservations --> UC : ErrReservationDejaActive
+        UC --> API : ErrReservationDejaActive
+        API --> Passager : 409 réservation déjà active
+      else insertion acceptée
+        DB --> Reservations : created_at
+        Reservations -> DB : COMMIT
+        Reservations --> UC : Reservation{id, ACTIVE}
+        UC -> Notif : NotifierReservation(...)
+        note right of UC
+          Au mieux (ADR 0007) : un échec
+          de notification ne défait pas
+          la réservation déjà validée.
+        end note
+        UC --> API : Reservation
+        API --> Passager : 201 {id, ride_id, passenger, status: ACTIVE, created_at}
+      end
     end
   end
 end
 
 note over Trajets, DB
-  Différé (ADR 0004) : aucun décrément de places.
-  Le trajet est lu dans la table rides (UC1) et le refus
-  « trajet complet » ne porte que sur seats_available tel quel,
-  sans protection de la dernière place sous concurrence.
-  Le décrément conditionnel et la clé étrangère arriveront ensemble.
+  Appliqué (ADR 0004) : la lecture de places par UC3 est un refus rapide,
+  pas la source de vérité. L'UPDATE conditionnel et l'INSERT sont dans la
+  même transaction : la dernière place et le doublon sont arbitrés par la
+  base, et bookings.ride_id référence rides(id).
 end note
 
 @enduml
