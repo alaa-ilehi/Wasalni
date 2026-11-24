@@ -41,7 +41,7 @@ type Profil struct {
 	Nom         string
 	Age         int
 	Sexe        Sexe
-	Photo       string // base64 d'un PNG déjà normalisé ; vide si absent
+	Photo       string // base64 d'un WebP déjà normalisé ; vide si absent
 	CreeLe      time.Time
 	MajLe       time.Time
 }

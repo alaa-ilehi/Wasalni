@@ -25,9 +25,9 @@ une place). Les décisions structurantes sont tracées en ADR (§16).
 |---|---|
 | Aucune infrastructure serveur (cadre du TP) | un binaire unique, un fichier SQLite, lancement par `go run ./cmd/wasalni` |
 | Aucune chaîne de compilation C en CI | pilote `modernc.org/sqlite`, pur Go, sans cgo (ADR 0005, ADR 0009) |
-| Dépendances limitées à la bibliothèque standard et à `modernc.org/sqlite` | routage `net/http`, JSON `encoding/json`, images `image` et `image/png`, journaux `log/slog` (ADR 0009) |
+| Dépendances limitées à la bibliothèque standard, à `modernc.org/sqlite` et au codec WebP | routage `net/http`, JSON `encoding/json`, images `image` (+ `webp-go-pure` pour l'encodage), journaux `log/slog` (ADR 0009) |
 | Identité fournie par un système externe | en-tête `X-User`, aucune session, aucun mot de passe (ADR 0002) |
-| Photo stockée en base, poids borné | pipeline PNG sans perte, 512 px et 512 Kio au plus (ADR 0008) |
+| Photo stockée en base, poids borné | pipeline WebP sans perte, 512 px et 512 Kio au plus (ADR 0008) |
 | Documents et messages en français, contrat HTTP en anglais | erreurs métier en français, clés JSON en anglais (`name`, `age`, `sex`, `photo`) |
 
 ## 3. Vue de contexte
@@ -51,7 +51,7 @@ reste une donnée de confiance (ADR 0002).
 | `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet` et UC3 `ReserverPlace` | `internal/domain` |
 | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, règles de validation, erreurs, ports | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
-| `internal/infrastructure/photos` | normalisation de la photo : décodage, réduction, encodage PNG | bibliothèque standard seule |
+| `internal/infrastructure/photos` | normalisation de la photo : décodage, réduction, encodage WebP | bibliothèque standard + `webp-go-pure` |
 | `internal/infrastructure/notifications` | adaptateur du port `Notificateur` : une ligne de journal par réservation | `internal/domain`, `log/slog` |
 | Fichier SQLite | table `users` | — |
 
@@ -115,7 +115,7 @@ l'en-tête est absent (ADR 0002).
 
 - `ProfilRepository` est déclaré par le domaine : l'entité `Profil` y vit et le cas d'utilisation en dépend directement.
 - `NormaliseurPhoto` est déclaré par l'application, pas par le domaine : le format d'image est un détail technique, le
-  domaine ne connaît que `Profil.Photo`, une chaîne base64 d'un PNG déjà normalisé.
+  domaine ne connaît que `Profil.Photo`, une chaîne base64 d'un WebP déjà normalisé.
 - L'identité n'est pas un port : c'est une fonction de l'adaptateur HTTP. Un port pour un seul adaptateur et sans second
   implémentation réelle serait une abstraction spéculative (ADR 0001, ADR 0002).
 - Un port n'est ajouté que s'il a un système externe derrière lui ou deux implémentations réelles (l'adaptateur SQLite et
@@ -137,7 +137,7 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 Corps de requête (`SaisieProfil`) :
 
 ```json
-{"name": "Amine", "age": 24, "sex": "MALE", "photo": "data:image/png;base64,iVBORw0…"}
+{"name": "Amine", "age": 24, "sex": "MALE", "photo": "data:image/webp;base64,UklGR…"}
 ```
 
 Corps de réponse (`profilJSON`) :
@@ -248,7 +248,7 @@ Invariants portés par le schéma ou par le domaine :
 - `age` est borné par un `CHECK` (18 à 99), doublé de la validation du domaine : une saisie hors bornes est refusée en
   `400`, pas par la base.
 - `sex` est facultatif et vaut `NULL` quand il n'est pas renseigné ; l'adaptateur écrit `NULL` pour la valeur vide.
-- `photo` vaut `NULL` quand le profil n'a pas de photo ; sinon, base64 d'un PNG normalisé de 512 Kio au plus.
+- `photo` vaut `NULL` quand le profil n'a pas de photo ; sinon, base64 d'un WebP normalisé de 512 Kio au plus.
 - `created_at` et `updated_at` sont posés par la base au format RFC 3339 UTC, puis relus par `RETURNING` : le service
   n'horodate pas lui-même.
 - Le schéma est idempotent (`CREATE TABLE IF NOT EXISTS`) et appliqué à chaque démarrage ; il n'y a pas de migration
@@ -278,21 +278,28 @@ qui diverge de l'implémentation est un défaut, pas une illustration.
 
 ## 10. Pipeline photo
 
-Le pipeline vit dans `internal/infrastructure/photos` et n'utilise que la bibliothèque standard (ADR 0008).
+Le pipeline vit dans `internal/infrastructure/photos` : bibliothèque standard pour le décodage et la réduction,
+`github.com/SeriousBug/webp-go-pure` pour l'encodage (ADR 0008, ADR 0009).
 
 1. **Réception.** La photo arrive en base64 dans le champ `photo`, éventuellement préfixée `data:image/…;base64,`. Le
    corps entier de la requête est limité à **10 Mio** (`TailleMaxCorps = 10 << 20`) avant tout décodage : au-delà, `413`.
-2. **Décodage.** Le préfixe de data URL, les espaces, tabulations et retours à la ligne sont retirés, puis la chaîne est
+2. **Budget de pixels.** `image.DecodeConfig` lit les dimensions **avant** `image.Decode` : au-delà de **24 Mpx**
+   (`PixelsMax`), la photo est refusée en `ErrImageTropGrande` (`400`) sans qu'aucun pixel ne soit alloué. La limite de
+   10 Mio borne les octets, pas les pixels ; sans ce plafond, quelques mégaoctets peuvent en déclarer des milliards.
+3. **Décodage.** Le préfixe de data URL, les espaces, tabulations et retours à la ligne sont retirés, puis la chaîne est
    décodée en base64 (standard ou sans remplissage). `image.Decode` reconnaît PNG, JPEG et GIF, enregistrés par des
-   imports anonymes. Une chaîne invalide ou un format inconnu donne `ErrImageIllisible` (`400`).
-3. **Réduction.** Le plus grand côté est ramené à **512 px** au plus (`CoteMax`) par moyenne de blocs (box filter) : chaque
-   pixel destination est la moyenne des pixels source de son bloc. Le redimensionneur est écrit à la main
-   (`internal/infrastructure/photos/couleur.go`), sans dépendance de codec ni de rééchantillonnage. Une image déjà petite
-   est conservée telle quelle.
-4. **Encodage.** Le résultat est encodé en **PNG sans perte** avec `png.BestCompression`.
-5. **Réduction par paliers.** Si le PNG dépasse **512 Kio** (`PoidsMax = 512 << 10`), le côté est réduit de 64 px à chaque
-   essai : 512, 448, 384, 320, 256, 192 puis **128 px** (`CoteMin`), et l'image est réencodée jusqu'à tenir sous la limite.
-6. **Refus.** À 128 px, si le PNG dépasse encore 512 Kio, la photo est refusée en `ErrImageTropLourde` (`400`). Le refus
+   imports anonymes. Une chaîne invalide ou un format inconnu donne `ErrImageIllisible` (`400`). La source est convertie
+   une seule fois en `*image.RGBA` (sans copie si elle l'est déjà) : le filtre lit ensuite `Pix` directement, au lieu
+   d'appeler `image.Image.At()` par pixel source.
+4. **Réduction.** Le plus grand côté est ramené à **512 px** au plus (`CoteMax`) par moyenne de blocs (box filter) : chaque
+   pixel destination est la moyenne des pixels source de son bloc. Le redimensionneur est écrit à la main, sans
+   dépendance de rééchantillonnage. Une image déjà petite est conservée telle quelle, donc sans perte au pixel près.
+5. **Encodage.** Le résultat est encodé en **WebP sans perte** (VP8L) par `webp-go-pure`. Sur la fixture de test de
+   512 × 512, le même contenu pèse 179 256 octets contre 787 545 en PNG.
+6. **Réduction par paliers.** Si le WebP dépasse **512 Kio** (`PoidsMax = 512 << 10`), trois paliers au plus sont essayés :
+   512, 256 puis **128 px** (`CoteMin`). L'échelle est bornée par construction, donc le pire cas ne dépend pas de la
+   taille d'entrée.
+7. **Refus.** À 128 px, si le WebP dépasse encore 512 Kio, la photo est refusée en `ErrImageTropLourde` (`400`). Le refus
    n'intervient donc que lorsque la contrainte est réellement impossible à tenir, jamais à cause du format d'entrée.
 
 Le résultat est stocké tel quel dans `users.photo`, en base64 : le service ne conserve ni fichier ni URL d'image.
@@ -388,7 +395,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
   remise en vente de la place, donc `seats_available` ne remonte jamais.
 - **UC2 (consulter un trajet) n'a pas d'endpoint.** Le port `ParIdentifiant` existe et sert UC3, mais aucune route ne rend
   un trajet publié ; c'est la prochaine brique naturelle.
-- **Photos stockées en base.** `users.photo` contient le PNG en base64 : environ un tiers de surcoût par rapport au
+- **Photos stockées en base.** `users.photo` contient le WebP en base64 : environ un tiers de surcoût par rapport au
   binaire, et l'image entière est relue et retransmise à chaque `GET /profile`. Acceptable pour une photo par profil, à
   revoir quand UC7 lira le profil du conducteur.
 - **Pas de frontend.** L'API est la seule surface ; le recadrage de la photo côté navigateur est prévu plus tard et n'est
@@ -399,8 +406,9 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
   instance par déploiement, pas de réplication, écritures en file (ADR 0005).
 - **Pas de migrations versionnées.** Le schéma est idempotent ; il faudra une stratégie dès qu'`users` évoluera ou que
   UC3 ajoutera ses tables.
-- **Coût du pipeline non borné en pixels.** La limite de 10 Mio borne l'entrée, pas le nombre de pixels décodés ni le coût
-  du box filter. Une image très grande reste coûteuse en mémoire avant réduction.
+- **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
+  plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
+  un budget par lot.
 - **Trois UC couverts, tous complets.** UC8, UC1 et UC3 le sont ; UC13 et UC12 n'ont qu'un adaptateur (identité non
   vérifiée, journal au lieu d'un système de notification). Les autres cas d'utilisation n'ont ni code ni test ; leur place est réservée dans
   l'architecture (§14), pas dans le schéma.
@@ -416,5 +424,5 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur | accepté |
 | [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 (adaptateur journal) |
-| [0008](adr/0008-photo-profil-png.md) | Photo de profil en PNG sans perte, 512 px et 512 Kio au plus | accepté |
+| [0008](adr/0008-photo-profil-webp.md) | Photo de profil en WebP sans perte, 512 px et 512 Kio au plus, budget de pixels | accepté |
 | [0009](adr/0009-choix-go.md) | Go avec `net/http`, `database/sql` et `modernc.org/sqlite` | accepté |

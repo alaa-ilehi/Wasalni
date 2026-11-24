@@ -7,7 +7,7 @@ import (
 )
 
 // Schema des profils (UC8). Idempotent, appliqué à chaque démarrage.
-// Le sexe est facultatif (NULL) et la photo est un PNG encodé en base64, ou NULL.
+// Le sexe est facultatif (NULL) et la photo est un WebP sans perte encodé en base64, ou NULL.
 const schemaProfil = `
 CREATE TABLE IF NOT EXISTS users (
     id         TEXT PRIMARY KEY,
