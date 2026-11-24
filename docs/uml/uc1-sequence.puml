@@ -1,0 +1,46 @@
+@startuml uc1-sequence
+title UC1 - Publier un trajet (périmètre livré)
+autonumber
+
+actor "Conducteur" as Conducteur
+participant "api.Routes\nPOST /rides" as API
+participant "application.PublierTrajet" as UC
+participant "Horloge\n(port application)" as Horloge
+participant "domain.TrajetRepository\n(sqlite.TrajetRepository)" as Trajets
+database "rides" as DB
+
+Conducteur -> API : POST /rides\nX-User: bob\n{origin, destination, departure_time, seats_total, price, cancel_delay_hours?}
+API -> API : identite(X-User)
+alt en-tête absent
+  API --> Conducteur : 401 identité manquante
+else identité reçue
+  API -> API : MaxBytesReader(10 Mio)\nDisallowUnknownFields\nDecode(SaisieTrajet)
+  alt corps invalide ou trop volumineux
+    API --> Conducteur : 400 corps JSON invalide / 413 corps trop volumineux
+  else saisie décodée
+    API -> UC : Executer(ctx, "bob", SaisieTrajet)
+    UC -> UC : alias departure\ndélai par défaut 2 h\nplaces = seats_total\nstatut = PUBLISHED
+    UC -> Horloge : Maintenant()
+    Horloge --> UC : maintenant (UTC)
+    UC -> UC : ValiderPublication(maintenant)
+    alt règle refusée
+      UC --> API : ErrTrajetInvalide (motif en français)
+      API --> Conducteur : 400 {"error": "trajet invalide : …"}
+    else trajet valide
+      UC -> Trajets : Publier(Trajet)
+      Trajets -> DB : INSERT INTO rides … RETURNING created_at
+      DB --> Trajets : id, created_at
+      Trajets --> UC : Trajet publié
+      UC --> API : Trajet publié
+      API --> Conducteur : 201 {id, driver_id, origin, destination,\ndeparture_time, seats_total, seats_available,\nprice, cancel_delay_hours, status: PUBLISHED, created_at}
+    end
+  end
+end
+
+note over UC, DB
+  Le délai X est stocké sur le trajet : l'échéance d'annulation (UC5)
+  sera departure - X. Les places disponibles partent au maximum et
+  ne sont pas décrémentées à la réservation (ADR 0004).
+end note
+
+@enduml
