@@ -68,7 +68,7 @@ package "internal/domain" {
     Nom : 2 à 80 caractères, espaces retirés
     Age : 18 à 99
     Sexe : MALE, FEMALE, OTHER ou vide
-    Photo : base64 d'un PNG déjà normalisé, ou vide
+    Photo : base64 d'un WebP déjà normalisé, ou vide
   end note
 
   note right of Trajet
@@ -172,9 +172,9 @@ package "internal/infrastructure/photos" {
   }
 
   note right of Normaliser
-    CoteMax 512 px, CoteMin 128 px, PasReduction 64 px
-    PoidsMax 512 Kio
-    PNG sans perte (png.BestCompression), box filter maison
+    CoteMax 512 px, CoteMin 128 px, paliers 512/256/128
+    PoidsMax 512 Kio, PixelsMax 24 Mpx
+    WebP sans perte (webp-go-pure), box filter maison
   end note
 }
 

@@ -6,7 +6,9 @@
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
 **État actuel :** UC8 (gérer son profil), UC1 (publier un trajet) et UC3 (réserver une place) sont complets : la
 réservation consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans
-surréservation possible, et `bookings.ride_id` référence `rides(id)` (ADR 0004).
+surréservation possible, et `bookings.ride_id` référence `rides(id)` (ADR 0004). La photo de profil est réencodée en
+**WebP sans perte** de 512 px et 512 Kio au plus, au-delà d'un budget de pixels qui refuse les bombes de décompression
+(ADR 0008).
 
 Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
 
