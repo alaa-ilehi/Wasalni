@@ -10,6 +10,9 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/domain"
 )
 
+// ErrIdentiteManquante : aucun acteur identifié (en-tête absent ou vide), quel que soit l'appel.
+var ErrIdentiteManquante = errors.New("identité manquante")
+
 // Erreur d'application : la photo fournie est inutilisable (illisible ou impossible à ramener sous la limite).
 // Elle traduit l'erreur du port de normalisation pour que l'interface n'ait pas à connaître l'infrastructure.
 var ErrPhotoInvalide = errors.New("photo invalide")

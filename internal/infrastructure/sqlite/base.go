@@ -11,7 +11,7 @@ import (
 
 // Ouvrir ouvre (et crée si besoin) le fichier de base, applique les pragmas puis le schéma.
 func Ouvrir(ctx context.Context, chemin string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", chemin)
+	db, err := sql.Open("sqlite", chemin+"?_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("ouverture de la base : %w", err)
 	}

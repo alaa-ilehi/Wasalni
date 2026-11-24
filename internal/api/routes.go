@@ -13,6 +13,24 @@ import (
 // TailleMaxCorps borne le corps HTTP accepté par PUT /profile (10 Mio, ADR 0008).
 const TailleMaxCorps = 10 << 20
 
+// Deps regroupe les cas d'utilisation exposés par l'API. La racine de composition les fournit.
+type Deps struct {
+	Profils      application.GererProfil
+	Reservations application.ReserverPlace
+}
+
+// Routes construit le routeur HTTP du service (Go 1.22 : motifs avec méthode).
+func Routes(deps Deps) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		repondreJSON(w, http.StatusOK, map[string]string{"statut": "ok"})
+	})
+	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils))
+	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils))
+	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
+	return mux
+}
+
 // profilJSON : représentation publique du profil, en anglais comme le reste du contrat HTTP.
 type profilJSON struct {
 	Identifiant string `json:"id"`
@@ -34,17 +52,6 @@ func versJSON(p domain.Profil) profilJSON {
 		CreeLe:      p.CreeLe.UTC().Format(time.RFC3339),
 		MajLe:       p.MajLe.UTC().Format(time.RFC3339),
 	}
-}
-
-// Routes construit le routeur HTTP du service (Go 1.22 : motifs avec méthode).
-func Routes(gerer application.GererProfil) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
-		repondreJSON(w, http.StatusOK, map[string]string{"statut": "ok"})
-	})
-	mux.HandleFunc("GET /profile", consulterProfil(gerer))
-	mux.HandleFunc("PUT /profile", enregistrerProfil(gerer))
-	return mux
 }
 
 // consulterProfil : GET /profile, le profil de l'identité courante.
@@ -98,5 +105,41 @@ func enregistrerProfil(gerer application.GererProfil) http.HandlerFunc {
 			statut = http.StatusCreated
 		}
 		repondreJSON(w, statut, versJSON(profil))
+	}
+}
+
+// reservationJSON : représentation publique d'une réservation.
+type reservationJSON struct {
+	Identifiant string `json:"id"`
+	Trajet      string `json:"ride_id"`
+	Passager    string `json:"passenger"`
+	Statut      string `json:"status"`
+	CreeLe      string `json:"created_at"`
+}
+
+func reservationVersJSON(r domain.Reservation) reservationJSON {
+	return reservationJSON{
+		Identifiant: r.Identifiant,
+		Trajet:      r.Trajet,
+		Passager:    r.Passager,
+		Statut:      string(r.Statut),
+		CreeLe:      r.CreeLe.UTC().Format(time.RFC3339),
+	}
+}
+
+// reserverPlace : POST /rides/{id}/bookings, le passager identifié réserve une place.
+func reserverPlace(reserver application.ReserverPlace) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		reservation, err := reserver.Executer(r.Context(), r.PathValue("id"), acteur)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusCreated, reservationVersJSON(reservation))
 	}
 }
