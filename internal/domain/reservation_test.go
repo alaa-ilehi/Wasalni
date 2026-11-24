@@ -19,7 +19,7 @@ func TestReservationValider(t *testing.T) {
 	cas := map[string]domain.Reservation{
 		"trajet vide":    {Passager: "alice", Statut: domain.ReservationActive},
 		"passager vide":  {Trajet: "t1", Statut: domain.ReservationActive},
-		"statut inconnu": {Trajet: "t1", Passager: "alice", Statut: "PENDING"},
+		"statut inconnu": {Trajet: "t1", Passager: "alice", Statut: "INCONNU"},
 		"statut vide":    {Trajet: "t1", Passager: "alice"},
 	}
 	for libelle, reservation := range cas {
