@@ -18,6 +18,28 @@ pixels qui refuse les bombes de décompression (ADR 0008).
 
 Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
 
+### Configuration
+
+Le binaire se configure par deux variables d'environnement, doublées chacune d'un drapeau (le drapeau gagne) :
+
+| Variable | Drapeau | Défaut | Rôle |
+|---|---|---|---|
+| `WASALNI_ADDR` | `-addr` | `:8080` | adresse d'écoute HTTP |
+| `WASALNI_DB` | `-db` | `wasalni.db` | chemin du fichier SQLite (créé et migré au démarrage) |
+
+Aucun service externe n'est requis : la base est un fichier unique, les photos vivent dedans, et les mots de passe sont
+hachés par la bibliothèque standard. Le binaire se compile sans cgo : `CGO_ENABLED=0 go build ./cmd/wasalni`.
+
+```bash
+CGO_ENABLED=0 go build -o wasalni ./cmd/wasalni        # produit ./wasalni
+WASALNI_DB=/tmp/wasalni.db WASALNI_ADDR=127.0.0.1:8080 ./wasalni
+
+curl -s 127.0.0.1:8080/health                          # {"statut":"ok"} : la base est ouverte et le schéma appliqué
+```
+
+Une base ordinaire se crée toute seule : `sqlite3 wasalni.db '.tables'` doit lister `bookings`, `credentials`, `ratings`,
+`rides`, `sessions` et `users`.
+
 ```bash
 go run ./cmd/wasalni                                   # écoute sur :8080, base wasalni.db
 
