@@ -20,6 +20,14 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
 )
 
+// notificateurComplet réunit les quatre ports de notification : un seul adaptateur, choisi une fois au démarrage.
+type notificateurComplet interface {
+	application.Notificateur
+	application.NotificateurAnnulation
+	application.NotificateurGestionTrajet
+	application.NotificateurFinTrajet
+}
+
 func main() {
 	adresse := flag.String("addr", valeurEnv("WASALNI_ADDR", ":8080"), "adresse d'écoute HTTP")
 	cheminBase := flag.String("db", valeurEnv("WASALNI_DB", "wasalni.db"), "fichier SQLite")
@@ -49,7 +57,11 @@ func main() {
 	publierTrajet := application.NouveauPublierTrajet(trajets, horlogeReelle{})
 	rechercherTrajets := application.NouveauRechercherTrajets(trajets)
 	consulterTrajet := application.NouveauConsulterTrajet(trajets, profils, evaluations)
-	notificateur := notifications.NouveauJournal(journal)
+	// UC12 : une URL configurée livre réellement les événements ; sans elle, le journal reste la trace (ADR 0013).
+	var notificateur notificateurComplet = notifications.NouveauJournal(journal)
+	if url := valeurEnv("WASALNI_NOTIFICATION_URL", ""); url != "" {
+		notificateur = notifications.NouveauWebhook(url)
+	}
 	reserverPlace := application.NouveauReserverPlace(
 		trajets,
 		reservations,
@@ -57,8 +69,8 @@ func main() {
 	)
 	annulerReservation := application.NouveauAnnulerReservation(reservations, horlogeReelle{}, notificateur)
 	evaluerParticipant := application.NouveauEvaluerParticipant(trajets, reservations, evaluations)
-	terminerTrajet := application.NouveauTerminerTrajet(trajets, notifications.NouveauJournal(journal))
-	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notifications.NouveauJournal(journal))
+	terminerTrajet := application.NouveauTerminerTrajet(trajets, notificateur)
+	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notificateur)
 
 	// UC10 : deux listes en lecture seule, filtrées sur l'identité de la session.
 	mesTrajets := application.NouveauMesTrajets(trajets)

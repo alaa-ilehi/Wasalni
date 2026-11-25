@@ -97,11 +97,11 @@ Chaîne nominale d'UC1 : `Routes` → `PublierTrajet` → port `TrajetRepository
 
 Chaîne nominale d'UC3 : `Routes` → `ReserverPlace` → port `TrajetRepository` (lecture du trajet) puis port
 `ReservationRepository` → `sqlite.ReservationRepository` → table `bookings`, sous l'index unique partiel ; enfin le port
-`Notificateur` → `notifications.Journal`. Les deux cas d'utilisation partagent le même entrepôt de trajets, câblé une
+`Notificateur` → `notifications.Webhook` (ou `notifications.Journal` quand aucune URL n'est configurée). Les deux cas d'utilisation partagent le même entrepôt de trajets, câblé une
 seule fois dans `cmd/wasalni/main.go`.
 
 Chaîne nominale d'UC11 : `Routes` → `TerminerTrajet` → `TrajetFinRepository` → `sqlite.TrajetRepository` → transition
-transactionnelle de `rides.status` vers `COMPLETED`, puis `NotificateurFinTrajet` → `notifications.Journal`.
+transactionnelle de `rides.status` vers `COMPLETED`, puis `NotificateurFinTrajet` → le même notificateur, choisi une fois au démarrage.
 
 Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `Authorization: Bearer <jeton>` et le résout par
 `Authentification.Resoudre` → `sessions` ; sans jeton valide la réponse est `401` (ADR 0011).
@@ -504,8 +504,11 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   `-5` refusés), le parcours par curseur et le `400` d'un `after` abîmé.
 - **Tests des notifications** : `internal/infrastructure/notifications/journal_test.go` capture le journal sur un
   `bytes.Buffer` et vérifie, pour chacune des cinq notifications, le niveau, le message et les attributs, plus le repli
-  de `NouveauJournal(nil)` ; des assertions de conformité lient `Journal` aux quatre ports, donc un port modifié casse la
-  compilation.
+  de `NouveauJournal(nil)` ; des assertions de conformité lient `Journal` et `Webhook` aux quatre ports, donc un port
+  modifié casse la compilation.
+- **Tests du webhook** : `webhook_test.go` capture chaque `POST` sur un récepteur `httptest` (méthode, `Content-Type`,
+  corps JSON exact pour les cinq événements), vérifie qu'un `500` et une cible injoignable rendent une erreur, et qu'une
+  cible qui ne répond pas échoue au délai du client au lieu de bloquer.
 - **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 1 min 40 s sur `main` : la compilation instrumentée (~50 s) et les tests `photos` (~20 s, encodage WebP sans perte sous `-race`) en font l'essentiel.
 
 ## 13. Lancer le service
@@ -546,15 +549,16 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté : décrément atomique des places et clé étrangère (ADR 0004) |
 | UC6 | `EvaluerParticipant` (`internal/application/evaluer_participant.go`) | `TrajetRepository`, `ReservationRepository`, `EvaluationRepository` | implémenté : `POST /rides/{id}/ratings`, une note par couple, moyenne lue par UC7 (ADR 0010) |
 | UC11 | `TerminerTrajet` (`internal/application/terminer_trajet.go`) | `TrajetFinRepository`, `NotificateurFinTrajet` | implémenté : `POST /rides/{id}/complete`, transition unique `PUBLISHED` → `COMPLETED` |
-| UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
+| UC12 | `Notificateur` → `notifications.Webhook` (`notifications.Journal` en repli) | `POST` JSON vers `WASALNI_NOTIFICATION_URL` | implémenté : cinq événements livrés au mieux après commit, 5 s de délai au plus (ADR 0007, ADR 0013) |
 | UC5 | `AnnulerReservation` (`internal/application/annuler_reservation.go`) | `ReservationRepository`, `Horloge`, `NotificateurAnnulation` | implémenté : `DELETE /bookings/{id}`, annulation et place rendue atomiquement |
 | UC9 | `GererTrajet` (`internal/application/gerer_trajet.go`) | `TrajetGestionRepository` | implémenté : modification et suppression logique, réservations annulées en transaction |
 | UC10 | `MesTrajets` et `MesReservations` (`internal/application/mes_trajets.go`) | `TrajetRepository` (`ParConducteur`), `ReservationRepository` (`ParPassager`) | implémenté : `GET /me/rides` et `GET /me/bookings`, filtrés sur l'identité de la session (`401` sans jeton) |
 
 ## 15. Dette et limites connues
 
-- **Notification externe absente.** UC3, UC5, UC9 et UC11 écrivent un événement dans le journal après commit ; l'envoi
-  effectif reste à implémenter avec le système externe d'UC12 (ADR 0007).
+- **Notification sans garantie de livraison.** UC3, UC5, UC9 et UC11 livrent un `POST` JSON après commit, borné à 5 s
+  et sans réessai : un destinataire injoignable perd l'événement au-delà de la ligne de journal. Une file persistante
+  serait la réponse si la livraison devait survivre à un redémarrage (ADR 0013).
 - **Photos stockées en base.** `users.photo` contient le WebP en base64 : environ un tiers de surcoût par rapport au
   binaire, et l'image entière est relue et retransmise à chaque `GET /profile` comme dans `GET /rides/{id}`. Acceptable
   pour une photo par profil, à revoir si le volume grandit (ADR 0008).
@@ -585,9 +589,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel et décrément conditionnel dans la transaction immédiate | appliqué |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |
 | [0006](adr/0006-modele-erreurs.md) | Erreurs de domaine sans HTTP, correspondance unique dans l'adaptateur | accepté |
-| [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué pour UC3 et UC11 (adaptateur journal) |
+| [0007](adr/0007-notification-au-mieux.md) | Notification au mieux, sans remise en cause de l'écriture | appliqué : journal ou webhook (ADR 0013) |
 | [0008](adr/0008-photo-profil-webp.md) | Photo de profil en WebP sans perte, 512 px et 512 Kio au plus, budget de pixels | accepté |
 | [0009](adr/0009-choix-go.md) | Go avec `net/http`, `database/sql` et `modernc.org/sqlite` | accepté |
 | [0010](adr/0010-evaluations.md) | Évaluations en table dédiée, moyenne calculée à la lecture et exposée par UC7 | appliqué |
 | [0011](adr/0011-authentification-sessions.md) | Authentification par session : jetons opaques hachés en base, mots de passe PBKDF2 salés en bibliothèque standard, jeton Bearer sur toutes les routes sauf `/health` et `/auth/*` | appliqué |
 | [0012](adr/0012-suppression-logique-trajets.md) | Suppression logique des trajets : `rides.deleted_at`, lectures publiques filtrées, réservations annulées et places rendues dans la même transaction | appliqué |
+| [0013](adr/0013-notification-http.md) | Notifications livrées par `POST` JSON vers `WASALNI_NOTIFICATION_URL`, journal en repli, 5 s de délai, sans réessai | appliqué |
