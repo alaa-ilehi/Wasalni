@@ -2,20 +2,20 @@
 
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
-référence. Huit cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8, UC9 et UC11. Les décisions
+référence. Dix cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8, UC9, UC11 et UC13. Les décisions
 structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Huit sont livrés : UC8 (profil), UC1 (publier),
+- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Dix sont livrés : UC8 (profil), UC1 (publier),
   UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC6 (évaluer les participants), UC9
-  (modifier/supprimer un trajet) et UC11
-  (terminer un trajet).
+  (modifier/supprimer un trajet), UC11 (terminer un trajet) et UC13 (s'inscrire, se connecter, présenter un jeton).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
      réservations et la consommation d'une place sont garanties par la base, dans une seule transaction (ADR 0004) ;
-  3. laisser une place explicite aux systèmes externes (authentification, notification) sans les simuler dans le domaine ;
+  3. laisser une place explicite aux systèmes externes (notification) sans les simuler dans le domaine, et garder la
+     preuve d'identité hors du domaine : UC13 vit dans l'application et l'infrastructure, derrière des ports (ADR 0011) ;
   4. rendre l'ajout des UC restants mécanique : un cas d'utilisation = un fichier dans `internal/application`, plus des
      ports existants.
 - **Hors périmètre :** interface web, validation externe différée, messagerie temps réel, déploiement multi-instance.
@@ -67,8 +67,8 @@ Dépendances strictement orientées vers l'intérieur : `api` → `application` 
 | Couche | Paquet | Responsabilité | Ne connaît pas |
 |---|---|---|---|
 | Domaine | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, types énumérés, invariants (`Profil.Valider`, `Trajet.ValiderPublication`, `Reservation.Valider`), erreurs sentinelles, **déclaration des ports** | `net/http`, `database/sql` |
-| Application | `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC3 `ReserverPlace`, saisies d'entrée, ports secondaires `NormaliseurPhoto`, `Notificateur`, `Horloge` | HTTP, SQL |
-| Infrastructure | `internal/infrastructure/sqlite`, `internal/infrastructure/photos`, `internal/infrastructure/notifications` | adaptateurs des ports (schéma, transactions, horodatages), pipeline d'image, journal de notification | HTTP |
+| Application | `internal/application` | cas d'utilisation UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC3 `ReserverPlace`, UC5 `AnnulerReservation`, UC6 `EvaluerParticipant`, UC7 `ConsulterTrajet`, UC8 `GererProfil`, UC9 `GererTrajet`, UC11 `TerminerTrajet`, UC13 `Authentification`, saisies d'entrée, ports secondaires `NormaliseurPhoto`, `Notificateur*`, `Horloge`, `HacheurMotDePasse`, ports d'identité `CredentialRepository`, `SessionRepository` | HTTP, SQL |
+| Infrastructure | `internal/infrastructure/sqlite`, `internal/infrastructure/passwords`, `internal/infrastructure/photos`, `internal/infrastructure/notifications` | adaptateurs des ports (schéma, transactions, horodatages), hachage PBKDF2 des mots de passe, pipeline d'image, journal de notification | HTTP |
 | Interface | `internal/api` | routage, extraction de l'identité, décodage JSON, correspondance erreur → code HTTP | SQL, règles métier |
 | Composition | `cmd/wasalni/main.go` | racine de composition : ouvre la base, câble le cas d'utilisation et le normaliseur, sert HTTP, arrête proprement | — |
 
@@ -116,12 +116,17 @@ Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `Autho
 | `domain.ReservationRepository` | `internal/domain/ports.go` | `Reserver(ctx, Reservation) (Reservation, error)` ; échoue avec `ErrReservationDejaActive` si une réservation `ACTIVE` existe pour le couple (trajet, passager). `ParPassager(ctx, passager) ([]Reservation, error)` liste les réservations d'un passager, les deux états compris, de la plus récente à la plus ancienne | `internal/infrastructure/sqlite/reservation_repository.go` |
 | `application.Notificateur` | `internal/application/reserver_place.go` | `NotifierReservation(ctx, Reservation) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
 | `application.NotificateurFinTrajet` | `internal/application/terminer_trajet.go` | `NotifierFinTrajet(ctx, Trajet) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
+| `domain.CredentialRepository` | `internal/domain/identite.go` | `Enregistrer(ctx, Credential) error` (un identifiant déjà inscrit rend `ErrIdentifiantDejaInscrit`), `ParIdentifiant(ctx, identifiant) (Credential, error)` (inconnu → `ErrIdentifiantsInvalides`) | `internal/infrastructure/sqlite/identite_repository.go` |
+| `domain.SessionRepository` | `internal/domain/identite.go` | `Creer(ctx, Session) error`, `ParJeton(ctx, jeton, maintenant) (Session, error)` (absent ou échu → `ErrSessionInvalide`, la ligne échue est supprimée), `Supprimer(ctx, jeton) error` | `internal/infrastructure/sqlite/identite_repository.go` |
+| `application.HacheurMotDePasse` | `internal/application/authentification.go` | `Hacher(motDePasse) (domain.Credential, error)` avec un sel neuf à chaque appel, `Verifier(motDePasse, Credential) bool` à temps constant | `passwords.Hacheur` (`internal/infrastructure/passwords/pbkdf2.go`), faux en mémoire dans les tests |
 
 - `ProfilRepository` est déclaré par le domaine : l'entité `Profil` y vit et le cas d'utilisation en dépend directement.
 - `NormaliseurPhoto` est déclaré par l'application, pas par le domaine : le format d'image est un détail technique, le
   domaine ne connaît que `Profil.Photo`, une chaîne base64 d'un WebP déjà normalisé.
-- L'identité n'est pas un port : c'est une fonction de l'adaptateur HTTP. Un port pour un seul adaptateur et sans second
-  implémentation réelle serait une abstraction spéculative (ADR 0001, ADR 0002).
+- L'identité de l'appelant n'est pas un port : c'est une fonction de l'adaptateur HTTP, qui résout le jeton et passe une
+  chaîne aux cas d'utilisation (ADR 0002). En revanche les **données** d'authentification (condensé, session) traversent
+  des ports, déclarés par le domaine, avec deux implémentations réelles : SQLite et un annuaire en mémoire pour les tests
+  (ADR 0011).
 - Un port n'est ajouté que s'il a un système externe derrière lui ou deux implémentations réelles (l'adaptateur SQLite et
   un faux dans les tests).
 
@@ -223,7 +228,7 @@ Source : [uml/uc5-sequence.puml](uml/uc5-sequence.puml) et fiche [UC5](uc5-cance
 
 ## 9. Modèle de données
 
-Quatre tables, avec le DDL réellement appliqué (`internal/infrastructure/sqlite/schema.go`). Celle de UC8 :
+Six tables, avec le DDL réellement appliqué (`internal/infrastructure/sqlite/schema.go`). Celle de UC8 :
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -309,6 +314,32 @@ Invariants portés par le schéma ou par le domaine :
   obligatoirement lu par le cas d'usage.
 - `ratings.score` est borné à 1–5 et l'index `ratings_unique` interdit un second avis pour le même couple
   `(trajet, évaluateur, cible)` ; la moyenne est calculée à la lecture, sans colonne redondante sur `users` (ADR 0010).
+
+Celles de UC13 (compte et session, séparées de `users` : un identifiant peut s'inscrire avant d'avoir un profil) :
+
+```sql
+CREATE TABLE IF NOT EXISTS credentials (
+    user_id    TEXT PRIMARY KEY,
+    salt       BLOB NOT NULL,
+    hash       BLOB NOT NULL,
+    iterations INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
+```
+
+- `credentials` ne stocke ni mot de passe ni jeton : sel aléatoire de 16 octets, condensé PBKDF2 de 32 octets et nombre
+  d'itérations **par ligne**, pour que le coût puisse augmenter sans invalider les comptes (ADR 0011).
+- `sessions.token_hash` est l'empreinte SHA-256 du jeton : une copie de la base ne permet pas de rejouer une session. La
+  purge des lignes échues est paresseuse, à la lecture ; la déconnexion supprime la ligne.
+- Aucune clé étrangère vers `users` : le compte et le profil sont deux objets distincts.
 
 Les tables des autres UC (messages, paiements) n'existent pas encore : elles seront ajoutées avec les cas
 d'utilisation correspondants (§14).

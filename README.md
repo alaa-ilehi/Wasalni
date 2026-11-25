@@ -108,7 +108,7 @@ Niveau : **haute** (7-9), **moyenne** (5-6), **faible** (3-4).
 
 - **UC3** : il porte le risque de concurrence et impose la structure du cœur du système (trajets, places, réservations).
 - **UC1 et UC2** viennent ensuite : ils sont simples, mais nécessaires pour disposer de trajets à réserver.
-- L'authentification (UC13) et les notifications (UC12) sont déléguées à des systèmes externes.
+- Les notifications (UC12) sont déléguées à un système externe ; l'authentification (UC13) est portée par le service depuis UC13 (ADR 0011).
 
 ---
 
