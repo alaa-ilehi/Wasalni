@@ -44,7 +44,7 @@ func (r *ReservationRepository) Reserver(ctx context.Context, reservation domain
 
 	const decrement = `
 UPDATE rides SET seats_available = seats_available - 1
-WHERE id = ? AND seats_available > 0`
+WHERE id = ? AND seats_available > 0 AND status = 'PUBLISHED' AND deleted_at IS NULL`
 	resultat, err := tx.ExecContext(ctx, decrement, reservation.Trajet)
 	if err != nil {
 		return domain.Reservation{}, fmt.Errorf("décrément des places : %w", err)

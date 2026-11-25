@@ -1,5 +1,5 @@
 @startuml
-title Wasalni - modèle de classes (UC1, UC5, UC8)
+title Wasalni - modèle de classes (UC1 publier, UC5 annuler, UC8 profil, UC11 terminer)
 
 skinparam classAttributeIconSize 0
 
@@ -50,6 +50,7 @@ package "internal/domain" {
     CreeLe : time.Time
     Valider() : error
     ValiderPublication(maintenant) : error
+    ValiderTerminaison(conducteur) : error
     ResteAvantDepart(maintenant) : time.Duration
   }
 
@@ -57,6 +58,10 @@ package "internal/domain" {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+  }
+
+  interface TrajetFinRepository {
+    Terminer(ctx, identifiant, conducteur) : (Trajet, error)
   }
 
   class Reservation {
@@ -82,6 +87,8 @@ package "internal/domain" {
     ErrProfilIntrouvable
     ErrTrajetInvalide
     ErrTrajetIntrouvable
+    ErrTrajetNonProprietaire
+    ErrTrajetDejaTermine
     ErrReservationIntrouvable
     ErrReservationDejaAnnulee
     ErrAnnulationHorsDelai
@@ -99,6 +106,7 @@ package "internal/domain" {
     Places = PlacesTotal à la publication
     Prix >= 0, depart strictement futur
     DelaiAnnulation >= 0, defaut 2 h, < temps restant
+    Places consommées atomiquement à la réservation (ADR 0004)
     Réservation et compteur modifiés dans la même transaction
   end note
 }
@@ -148,6 +156,16 @@ package "internal/application" {
     Executer(ctx, conducteur, SaisieTrajet) : (Trajet, error)
   }
 
+  interface NotificateurFinTrajet {
+    NotifierFinTrajet(ctx, Trajet) : error
+  }
+
+  class TerminerTrajet {
+    trajets : TrajetFinRepository
+    notificateur : NotificateurFinTrajet
+    Executer(ctx, conducteur, trajetID) : (Trajet, error)
+  }
+
   interface NotificateurAnnulation {
     NotifierAnnulation(ctx, Reservation) : error
   }
@@ -179,6 +197,7 @@ package "internal/infrastructure/sqlite" {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+    Terminer(ctx, identifiant, conducteur) : (Trajet, error)
   }
 
   class "ReservationRepository\n(adaptateur SQLite)" as SqliteReservationRepository {
@@ -226,6 +245,12 @@ package "internal/infrastructure/photos" {
   end note
 }
 
+package "internal/infrastructure/notifications" {
+  class Journal {
+    NotifierFinTrajet(ctx, Trajet) : error
+  }
+}
+
 package "internal/api" {
   class Routes <<fonction>> {
     Routes(Deps) : http.Handler
@@ -235,6 +260,7 @@ package "internal/api" {
     GET /rides
     POST /rides
     POST /rides/{id}/bookings
+    POST /rides/{id}/complete
     DELETE /bookings/{id}
   }
 
@@ -254,6 +280,9 @@ package "internal/api" {
 
 package "internal/infrastructure/notifications" {
   class Journal {
+    NotifierFinTrajet(ctx, Trajet) : error
+    NotifierModificationTrajet(ctx, Trajet) : error
+    NotifierSuppressionTrajet(ctx, Trajet) : error
     NotifierAnnulation(ctx, Reservation) : error
   }
 }
@@ -282,6 +311,9 @@ PublierTrajet ..> TrajetRepository : utilise le port
 PublierTrajet ..> Horloge : utilise le port
 PublierTrajet ..> SaisieTrajet : reçoit
 PublierTrajet ..> Trajet : valide puis publie
+TerminerTrajet ..> TrajetFinRepository : termine le trajet
+TerminerTrajet ..> NotificateurFinTrajet : journalise au mieux
+TerminerTrajet ..> Trajet : valide propriétaire et état
 AnnulerReservation ..> ReservationRepository : annule atomiquement
 AnnulerReservation ..> Horloge : lit maintenant
 AnnulerReservation ..> NotificateurAnnulation : notifie au mieux
@@ -289,7 +321,9 @@ AnnulerReservation ..> Reservation : valide l'annulation
 
 ProfilRepository <|.. SqliteProfilRepository
 TrajetRepository <|.. SqliteTrajetRepository
+TrajetFinRepository <|.. SqliteTrajetRepository
 ReservationRepository <|.. SqliteReservationRepository
+NotificateurFinTrajet <|.. Journal
 NormaliseurPhoto <|.. normaliseurPhoto
 Horloge <|.. horlogeReelle
 NotificateurAnnulation <|.. Journal
@@ -307,6 +341,7 @@ Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
 
 Routes --> GererProfil : appelle
 Routes --> PublierTrajet : appelle
+Routes --> TerminerTrajet : appelle
 Routes --> AnnulerReservation : appelle
 Routes ..> identite : lit X-User
 Routes ..> statutHTTP : traduit les erreurs
@@ -319,6 +354,7 @@ Racine --> horlogeReelle : instancie
 Racine --> SqliteReservationRepository : instancie
 Racine --> GererProfil : câble
 Racine --> PublierTrajet : câble
+Racine --> TerminerTrajet : câble
 Racine --> AnnulerReservation : câble
 Racine --> Routes : monte le routeur
 @enduml

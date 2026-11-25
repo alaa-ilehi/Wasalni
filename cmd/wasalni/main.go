@@ -41,7 +41,7 @@ func main() {
 	profils := sqlite.NouveauProfilRepository(db)
 	gererProfil := application.NouveauGererProfil(profils, normaliseurPhoto{})
 
-	// Un seul entrepôt de trajets sert les cas d'utilisation publication (UC1), recherche (UC2), lecture (UC3) et détails (UC7).
+	// Un seul entrepôt de trajets sert la publication, recherche, lecture, détails et terminaison des trajets.
 	trajets := sqlite.NouveauTrajetRepository(db)
 	reservations := sqlite.NouveauReservationRepository(db)
 	evaluations := sqlite.NouveauEvaluationRepository(db)
@@ -56,17 +56,21 @@ func main() {
 	)
 	annulerReservation := application.NouveauAnnulerReservation(reservations, horlogeReelle{}, notificateur)
 	evaluerParticipant := application.NouveauEvaluerParticipant(trajets, reservations, evaluations)
+	terminerTrajet := application.NouveauTerminerTrajet(trajets, notifications.NouveauJournal(journal))
+	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notifications.NouveauJournal(journal))
 
 	serveur := &http.Server{
 		Addr: *adresse,
 		Handler: api.Routes(api.Deps{
-			Profils:      gererProfil,
-			Recherches:   rechercherTrajets,
-			Trajets:      publierTrajet,
-			Details:      consulterTrajet,
-			Reservations: reserverPlace,
-			Annulations:  annulerReservation,
-			Evaluations:  evaluerParticipant,
+			Profils:        gererProfil,
+			Recherches:     rechercherTrajets,
+			Trajets:        publierTrajet,
+			Details:        consulterTrajet,
+			Reservations:   reserverPlace,
+			Annulations:    annulerReservation,
+			Terminaisons:   terminerTrajet,
+			GestionTrajets: gererTrajet,
+			Evaluations:    evaluerParticipant,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

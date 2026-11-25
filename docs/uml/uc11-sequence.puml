@@ -1,0 +1,54 @@
+@startuml uc11-sequence
+title UC11 - Terminer un trajet
+autonumber
+
+actor "Conducteur" as Conducteur
+participant "api.Routes\nPOST /rides/{id}/complete" as API
+participant "application.TerminerTrajet" as UC
+participant "domain.TrajetFinRepository\n(sqlite)" as Trajets
+database "rides" as DB
+participant "notifications.Journal" as Notif
+
+Conducteur -> API : POST /rides/{id}/complete\nX-User: alice
+API -> API : identite(X-User)
+alt identité absente
+  API --> Conducteur : 401
+else identité présente
+  API -> UC : Executer("alice", id)
+  UC -> Trajets : Terminer(id, "alice")
+  Trajets -> DB : BEGIN IMMEDIATE
+  Trajets -> DB : lire le trajet
+  alt inconnu
+    Trajets -> DB : ROLLBACK
+    Trajets --> UC : ErrTrajetIntrouvable
+    UC --> API : ErrTrajetIntrouvable
+    API --> Conducteur : 404
+  else autre propriétaire
+    Trajets -> DB : ROLLBACK
+    Trajets --> UC : ErrTrajetNonProprietaire
+    UC --> API : ErrTrajetNonProprietaire
+    API --> Conducteur : 403
+  else déjà terminé
+    Trajets -> DB : ROLLBACK
+    Trajets --> UC : ErrTrajetDejaTermine
+    UC --> API : ErrTrajetDejaTermine
+    API --> Conducteur : 409
+  else publié et propriétaire
+    Trajets -> DB : UPDATE rides SET status = COMPLETED\nWHERE status = PUBLISHED
+    Trajets -> DB : COMMIT
+    Trajets --> UC : Trajet COMPLETED
+    UC -> Notif : NotifierFinTrajet(...)
+    note right of UC
+      Événement journalisé au mieux après commit.
+      La livraison aux passagers relève d'UC12.
+    end note
+    UC --> API : Trajet COMPLETED
+    API --> Conducteur : 200 + trajet
+  end
+end
+
+note over DB
+  Une seconde transition constate COMPLETED
+  et ne change aucune donnée.
+end note
+@enduml

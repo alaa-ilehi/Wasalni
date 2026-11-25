@@ -1,0 +1,24 @@
+@startuml
+title UC9 — Modifier ou supprimer un trajet publié
+actor Conducteur
+participant API
+participant GererTrajet
+participant TrajetRepository
+database SQLite
+
+Conducteur -> API: PUT /rides/{id} ou DELETE /rides/{id}
+API -> API: vérifier X-User
+API -> GererTrajet: Modifier(...) / Supprimer(...)
+GererTrajet -> TrajetRepository: vérifier propriétaire et état
+TrajetRepository -> SQLite: BEGIN
+alt modification
+  TrajetRepository -> SQLite: compter réservations ACTIVE
+  TrajetRepository -> SQLite: valider capacité et mettre à jour trajet
+else suppression
+  TrajetRepository -> SQLite: annuler réservations ACTIVE
+  TrajetRepository -> SQLite: poser deleted_at
+end
+TrajetRepository -> SQLite: COMMIT
+GererTrajet --> API: résultat
+API --> Conducteur: 200 trajet modifié / 204 supprimé
+@enduml

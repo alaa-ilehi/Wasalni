@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -74,6 +75,73 @@ func TestPublierPuisRelireUnTrajet(t *testing.T) {
 	}
 }
 
+func TestTerminerTrajetVerifieProprietaireEtTransition(t *testing.T) {
+	ctx := context.Background()
+	depot, _, fermer := baseTrajet(t)
+	defer fermer()
+	cree, err := depot.Publier(ctx, trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := depot.Terminer(ctx, cree.Identifiant, "alice"); !errors.Is(err, domain.ErrTrajetNonProprietaire) {
+		t.Fatalf("erreur mauvais conducteur = %v", err)
+	}
+	if _, err := depot.Terminer(ctx, "inconnu", "bob"); !errors.Is(err, domain.ErrTrajetIntrouvable) {
+		t.Fatalf("erreur trajet inconnu = %v", err)
+	}
+
+	termine, err := depot.Terminer(ctx, cree.Identifiant, "bob")
+	if err != nil {
+		t.Fatalf("terminaison : %v", err)
+	}
+	if termine.Statut != domain.TrajetTermine {
+		t.Fatalf("statut retourné = %q", termine.Statut)
+	}
+	relu, err := depot.ParIdentifiant(ctx, cree.Identifiant)
+	if err != nil || relu.Statut != domain.TrajetTermine {
+		t.Fatalf("trajet relu = %+v, erreur = %v", relu, err)
+	}
+	if _, err := depot.Terminer(ctx, cree.Identifiant, "bob"); !errors.Is(err, domain.ErrTrajetDejaTermine) {
+		t.Fatalf("erreur seconde terminaison = %v", err)
+	}
+}
+
+func TestTerminerTrajetConcurrentUneSeuleTransition(t *testing.T) {
+	depot, _, fermer := baseTrajet(t)
+	defer fermer()
+	cree, err := depot.Publier(context.Background(), trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var attente sync.WaitGroup
+	erreurs := make(chan error, 2)
+	for range 2 {
+		attente.Add(1)
+		go func() {
+			defer attente.Done()
+			_, err := depot.Terminer(context.Background(), cree.Identifiant, "bob")
+			erreurs <- err
+		}()
+	}
+	attente.Wait()
+	close(erreurs)
+	succes, dejaTermine := 0, 0
+	for err := range erreurs {
+		switch {
+		case err == nil:
+			succes++
+		case errors.Is(err, domain.ErrTrajetDejaTermine):
+			dejaTermine++
+		default:
+			t.Errorf("erreur inattendue : %v", err)
+		}
+	}
+	if succes != 1 || dejaTermine != 1 {
+		t.Fatalf("succès = %d, déjà terminé = %d; attendu 1 de chaque", succes, dejaTermine)
+	}
+}
+
 func TestParIdentifiantRefuseUnTrajetInconnu(t *testing.T) {
 	ctx := context.Background()
 	depot, _, fermer := baseTrajet(t)
@@ -81,6 +149,49 @@ func TestParIdentifiantRefuseUnTrajetInconnu(t *testing.T) {
 
 	if _, err := depot.ParIdentifiant(ctx, "inconnu"); !errors.Is(err, domain.ErrTrajetIntrouvable) {
 		t.Fatalf("erreur = %v, attendu ErrTrajetIntrouvable", err)
+	}
+}
+
+func TestUC9ModifierAjustePlacesEtSupprimerAnnuleReservations(t *testing.T) {
+	ctx := context.Background()
+	depot, reservations, fermer := baseTrajet(t)
+	defer fermer()
+	cree, err := depot.Publier(ctx, trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, passager := range []string{"alice", "carol"} {
+		if _, err := reservations.Reserver(ctx, domain.Reservation{Trajet: cree.Identifiant, Passager: passager, Statut: domain.ReservationActive}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	modifie := trajetAPublier()
+	modifie.Identifiant = cree.Identifiant
+	modifie.Origine = "Paris"
+	modifie.PlacesTotal = 2
+	misAJour, err := depot.Modifier(ctx, modifie, "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if misAJour.Origine != "Paris" || misAJour.Places != 0 {
+		t.Fatalf("trajet modifié = %+v", misAJour)
+	}
+	modifie.PlacesTotal = 1
+	if _, err := depot.Modifier(ctx, modifie, "bob"); !errors.Is(err, domain.ErrPlacesInsuffisantes) {
+		t.Fatalf("places insuffisantes: %v", err)
+	}
+	if err := depot.Supprimer(ctx, cree.Identifiant, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := depot.ParIdentifiant(ctx, cree.Identifiant); !errors.Is(err, domain.ErrTrajetIntrouvable) {
+		t.Fatalf("trajet supprimé visible: %v", err)
+	}
+	listed, err := reservations.ParPassager(ctx, "alice")
+	if err != nil || len(listed) != 1 || listed[0].Statut != domain.ReservationAnnulee {
+		t.Fatalf("réservation après suppression = %+v, %v", listed, err)
+	}
+	if _, err := reservations.Reserver(ctx, domain.Reservation{Trajet: cree.Identifiant, Passager: "dave", Statut: domain.ReservationActive}); !errors.Is(err, domain.ErrTrajetComplet) {
+		t.Fatalf("nouvelle réservation après suppression: %v", err)
 	}
 }
 

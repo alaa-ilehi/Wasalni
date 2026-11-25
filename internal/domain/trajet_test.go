@@ -31,6 +31,28 @@ func TestValiderPublicationAccepteUnTrajetComplet(t *testing.T) {
 	}
 }
 
+func TestValiderTerminaison(t *testing.T) {
+	cases := []struct {
+		nom        string
+		conducteur string
+		statut     domain.StatutTrajet
+		erreur     error
+	}{
+		{nom: "propriétaire et publié", conducteur: "bob", statut: domain.TrajetPublie},
+		{nom: "autre conducteur", conducteur: "alice", statut: domain.TrajetPublie, erreur: domain.ErrTrajetNonProprietaire},
+		{nom: "déjà terminé", conducteur: "bob", statut: domain.TrajetTermine, erreur: domain.ErrTrajetDejaTermine},
+		{nom: "statut inconnu", conducteur: "bob", statut: "CANCELLED", erreur: domain.ErrTrajetInvalide},
+	}
+	for _, cas := range cases {
+		t.Run(cas.nom, func(t *testing.T) {
+			trajet := domain.Trajet{Conducteur: "bob", Statut: cas.statut}
+			if err := trajet.ValiderTerminaison(cas.conducteur); !errors.Is(err, cas.erreur) {
+				t.Fatalf("erreur = %v, attendu %v", err, cas.erreur)
+			}
+		})
+	}
+}
+
 func TestValiderPublicationRefuse(t *testing.T) {
 	maintenant := time.Date(2026, 11, 24, 20, 0, 0, 0, time.UTC)
 	cas := map[string]struct {
