@@ -138,8 +138,8 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `DELETE` | `/auth/session` | `Authorization: Bearer` requis | — | `204` session fermée, `401` session absente ou inconnue, `500` erreur inattendue |
 | `GET` | `/profile` | `Authorization: Bearer` requis | — | `200` profil, `401` session absente, `404` profil introuvable, `500` erreur inattendue |
 | `PUT` | `/profile` | `Authorization: Bearer` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
-| `GET` | `/rides` | — | — (`origin`, `destination`, `date` en query) | `200` liste triée par départ, `400` date invalide, `500` erreur inattendue |
-| `GET` | `/rides/{id}` | — | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `404` trajet inconnu ou terminé, `500` erreur inattendue |
+| `GET` | `/rides` | `Authorization: Bearer` requis | — (`origin`, `destination`, `date` en query) | `200` liste triée par départ, `400` date invalide, `401` session absente, `500` erreur inattendue |
+| `GET` | `/rides/{id}` | `Authorization: Bearer` requis | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `401` session absente, `404` trajet inconnu ou terminé, `500` erreur inattendue |
 | `POST` | `/rides` | `Authorization: Bearer` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `Authorization: Bearer` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` session absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
 | `PUT` | `/rides/{id}` | `Authorization: Bearer` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` | `200` trajet modifié, `400` saisie refusée, `401` session absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
@@ -452,8 +452,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | UC8 | `GererProfil` (`internal/application/gerer_profil.go`) | `ProfilRepository`, `NormaliseurPhoto` | implémenté |
 | UC13 | `Authentification` (`internal/application/authentification.go`) : inscription, connexion, déconnexion, résolution du jeton | `CredentialRepository`, `SessionRepository`, `HacheurMotDePasse` | implémenté : `/auth/register` (201), `/auth/login` (200), `DELETE /auth/session` (204) ; PBKDF2 avec sel par compte (ADR 0011) |
 | UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
-| UC2 | `RechercherTrajets` (`internal/application/rechercher_trajets.go`) | `TrajetRepository` (`Rechercher`) | implémenté : `GET /rides` (200/400) |
-| UC7 | `ConsulterTrajet` (`internal/application/consulter_trajet.go`) | `TrajetRepository`, `ProfilRepository`, `EvaluationRepository` | implémenté : `GET /rides/{id}` (200/404), note du conducteur issue de UC6 (ADR 0010) |
+| UC2 | `RechercherTrajets` (`internal/application/rechercher_trajets.go`) | `TrajetRepository` (`Rechercher`) | implémenté : `GET /rides` (200/400/401) |
+| UC7 | `ConsulterTrajet` (`internal/application/consulter_trajet.go`) | `TrajetRepository`, `ProfilRepository`, `EvaluationRepository` | implémenté : `GET /rides/{id}` (200/401/404), note du conducteur issue de UC6 (ADR 0010) |
 | UC3 | `ReserverPlace` (`internal/application/reserver_place.go`) | `TrajetRepository`, `ReservationRepository`, `Notificateur` | implémenté : décrément atomique des places et clé étrangère (ADR 0004) |
 | UC6 | `EvaluerParticipant` (`internal/application/evaluer_participant.go`) | `TrajetRepository`, `ReservationRepository`, `EvaluationRepository` | implémenté : `POST /rides/{id}/ratings`, une note par couple, moyenne lue par UC7 (ADR 0010) |
 | UC11 | `TerminerTrajet` (`internal/application/terminer_trajet.go`) | `TrajetFinRepository`, `NotificateurFinTrajet` | implémenté : `POST /rides/{id}/complete`, transition unique `PUBLISHED` → `COMPLETED` |
