@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alaa-ilehi/wasalni/internal/application"
@@ -24,6 +25,8 @@ type Deps struct {
 	Terminaisons   application.TerminerTrajet
 	GestionTrajets application.GererTrajet
 	Evaluations    application.EvaluerParticipant
+	// Authentification : UC13, seule source d'identité ; aucune route protégée ne lit un en-tête de confiance.
+	Authentification application.Authentification
 }
 
 // Routes construit le routeur HTTP du service (Go 1.22 : motifs avec méthode).
@@ -32,23 +35,90 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		repondreJSON(w, http.StatusOK, map[string]string{"statut": "ok"})
 	})
-	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils))
-	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils))
-	mux.HandleFunc("GET /rides", rechercherTrajets(deps.Recherches))
-	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details))
-	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
-	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
-	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons))
-	mux.HandleFunc("PUT /rides/{id}", modifierTrajet(deps.GestionTrajets))
-	mux.HandleFunc("DELETE /rides/{id}", supprimerTrajet(deps.GestionTrajets))
-	mux.HandleFunc("DELETE /bookings/{id}", annulerReservation(deps.Annulations))
-	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations))
+	mux.HandleFunc("POST /auth/register", inscrire(deps.Authentification))
+	mux.HandleFunc("POST /auth/login", connecter(deps.Authentification))
+	mux.HandleFunc("DELETE /auth/session", deconnecter(deps.Authentification))
+	mux.HandleFunc("GET /profile", consulterProfil(deps.Profils, deps.Authentification))
+	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils, deps.Authentification))
+	mux.HandleFunc("GET /rides", rechercherTrajets(deps.Recherches, deps.Authentification))
+	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details, deps.Authentification))
+	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets, deps.Authentification))
+	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations, deps.Authentification))
+	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons, deps.Authentification))
+	mux.HandleFunc("PUT /rides/{id}", modifierTrajet(deps.GestionTrajets, deps.Authentification))
+	mux.HandleFunc("DELETE /rides/{id}", supprimerTrajet(deps.GestionTrajets, deps.Authentification))
+	mux.HandleFunc("DELETE /bookings/{id}", annulerReservation(deps.Annulations, deps.Authentification))
+	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations, deps.Authentification))
 	return mux
 }
 
-func modifierTrajet(gerer application.GererTrajet) http.HandlerFunc {
+// identifiantsJSON : corps commun à l'inscription et à la connexion (UC13).
+type identifiantsJSON struct {
+	Identifiant string `json:"id"`
+	MotDePasse  string `json:"password"`
+}
+
+// sessionJSON : jeton rendu une seule fois au client ; il n'est jamais relu depuis la base en clair.
+type sessionJSON struct {
+	Identifiant string `json:"id"`
+	Jeton       string `json:"token"`
+}
+
+func inscrire(auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		r.Body = http.MaxBytesReader(w, r.Body, TailleMaxCorps)
+		var saisie identifiantsJSON
+		decodeur := json.NewDecoder(r.Body)
+		decodeur.DisallowUnknownFields()
+		if err := decodeur.Decode(&saisie); err != nil {
+			repondreJSON(w, http.StatusBadRequest, erreurJSON{Erreur: "corps JSON invalide"})
+			return
+		}
+		jeton, err := auth.Inscrire(r.Context(), saisie.Identifiant, saisie.MotDePasse)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusCreated, sessionJSON{Identifiant: strings.TrimSpace(saisie.Identifiant), Jeton: jeton})
+	}
+}
+
+func connecter(auth application.Authentification) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, TailleMaxCorps)
+		var saisie identifiantsJSON
+		decodeur := json.NewDecoder(r.Body)
+		decodeur.DisallowUnknownFields()
+		if err := decodeur.Decode(&saisie); err != nil {
+			repondreJSON(w, http.StatusBadRequest, erreurJSON{Erreur: "corps JSON invalide"})
+			return
+		}
+		jeton, err := auth.Connecter(r.Context(), saisie.Identifiant, saisie.MotDePasse)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusOK, sessionJSON{Identifiant: strings.TrimSpace(saisie.Identifiant), Jeton: jeton})
+	}
+}
+
+func deconnecter(auth application.Authentification) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := identite(r, auth); err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		if err := auth.Deconnecter(r.Context(), jetonBearer(r)); err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func modifierTrajet(gerer application.GererTrajet, auth application.Authentification) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -70,9 +140,9 @@ func modifierTrajet(gerer application.GererTrajet) http.HandlerFunc {
 	}
 }
 
-func supprimerTrajet(gerer application.GererTrajet) http.HandlerFunc {
+func supprimerTrajet(gerer application.GererTrajet, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -86,9 +156,9 @@ func supprimerTrajet(gerer application.GererTrajet) http.HandlerFunc {
 }
 
 // terminerTrajet : POST /rides/{id}/complete, clôt le trajet du conducteur identifié.
-func terminerTrajet(terminer application.TerminerTrajet) http.HandlerFunc {
+func terminerTrajet(terminer application.TerminerTrajet, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		conducteur, err := identite(r)
+		conducteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -126,9 +196,9 @@ func versJSON(p domain.Profil) profilJSON {
 }
 
 // consulterProfil : GET /profile, le profil de l'identité courante.
-func consulterProfil(gerer application.GererProfil) http.HandlerFunc {
+func consulterProfil(gerer application.GererProfil, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -143,9 +213,9 @@ func consulterProfil(gerer application.GererProfil) http.HandlerFunc {
 }
 
 // enregistrerProfil : PUT /profile, crée (201) ou met à jour (200) le profil de l'identité courante.
-func enregistrerProfil(gerer application.GererProfil) http.HandlerFunc {
+func enregistrerProfil(gerer application.GererProfil, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -227,8 +297,12 @@ type detailTrajetJSON struct {
 }
 
 // consulterTrajet : GET /rides/{id}, lecture sans identité requise (UC7, aucune précondition).
-func consulterTrajet(consulter application.ConsulterTrajet) http.HandlerFunc {
+func consulterTrajet(consulter application.ConsulterTrajet, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := identite(r, auth); err != nil {
+			repondreErreur(w, err)
+			return
+		}
 		detail, err := consulter.Executer(r.Context(), r.PathValue("id"))
 		if err != nil {
 			repondreErreur(w, err)
@@ -250,8 +324,14 @@ func consulterTrajet(consulter application.ConsulterTrajet) http.HandlerFunc {
 }
 
 // rechercherTrajets : GET /rides, aucun identifiant requis (UC2, aucune précondition).
-func rechercherTrajets(rechercher application.RechercherTrajets) http.HandlerFunc {
+func rechercherTrajets(rechercher application.RechercherTrajets, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// La recherche ne sert pas l'identité, mais une session est exigée : la seule exception au
+		// jeton est /health et les routes /auth/* (ADR 0011).
+		if _, err := identite(r, auth); err != nil {
+			repondreErreur(w, err)
+			return
+		}
 		parametres := r.URL.Query()
 		trajets, err := rechercher.Executer(r.Context(), domain.CriteresRecherche{
 			Origine:     parametres.Get("origin"),
@@ -271,9 +351,9 @@ func rechercherTrajets(rechercher application.RechercherTrajets) http.HandlerFun
 }
 
 // publierTrajet : POST /rides, le conducteur identifié publie un trajet.
-func publierTrajet(publier application.PublierTrajet) http.HandlerFunc {
+func publierTrajet(publier application.PublierTrajet, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -323,9 +403,9 @@ func reservationVersJSON(r domain.Reservation) reservationJSON {
 }
 
 // reserverPlace : POST /rides/{id}/bookings, le passager identifié réserve une place.
-func reserverPlace(reserver application.ReserverPlace) http.HandlerFunc {
+func reserverPlace(reserver application.ReserverPlace, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return
@@ -340,9 +420,9 @@ func reserverPlace(reserver application.ReserverPlace) http.HandlerFunc {
 }
 
 // annulerReservation : DELETE /bookings/{id}, annule la réservation de l'acteur identifié.
-func annulerReservation(annuler application.AnnulerReservation) http.HandlerFunc {
+func annulerReservation(annuler application.AnnulerReservation, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		acteur, err := identite(r)
+		acteur, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return

@@ -47,11 +47,12 @@ func bancEvaluations(t *testing.T) (*httptest.Server, *sql.DB) {
 	reservations := sqlite.NouveauReservationRepository(db)
 	evaluations := sqlite.NouveauEvaluationRepository(db)
 	serveur := httptest.NewServer(api.Routes(api.Deps{
-		Profils:      application.NouveauGererProfil(profils, adaptateurPhoto{}),
-		Trajets:      application.NouveauPublierTrajet(trajets, horlogeFigee{}),
-		Details:      application.NouveauConsulterTrajet(trajets, profils, evaluations),
-		Reservations: application.NouveauReserverPlace(trajets, reservations, notificateurMuet{}),
-		Evaluations:  application.NouveauEvaluerParticipant(trajets, reservations, evaluations),
+		Authentification: identitePartagee.auth,
+		Profils:          application.NouveauGererProfil(profils, adaptateurPhoto{}),
+		Trajets:          application.NouveauPublierTrajet(trajets, horlogeFigee{}),
+		Details:          application.NouveauConsulterTrajet(trajets, profils, evaluations),
+		Reservations:     application.NouveauReserverPlace(trajets, reservations, notificateurMuet{}),
+		Evaluations:      application.NouveauEvaluerParticipant(trajets, reservations, evaluations),
 	}))
 	t.Cleanup(serveur.Close)
 	return serveur, db
@@ -66,7 +67,7 @@ func postEvaluation(t *testing.T, serveur *httptest.Server, trajet, acteur, corp
 	}
 	requete.Header.Set("Content-Type", "application/json")
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
@@ -228,6 +229,7 @@ func TestEvaluerRefuseUnTrajetNonTermine(t *testing.T) {
 
 func TestConsulterTrajetNoteNulleSansEvaluation(t *testing.T) {
 	serveur := httptest.NewServer(api.Routes(api.Deps{
+		Authentification: identitePartagee.auth,
 		Details: application.NouveauConsulterTrajet(
 			trajetsEnMemoire{"t1": {Identifiant: "t1", Conducteur: "alice", Statut: domain.TrajetPublie}},
 			profilsEnMemoire{"alice": {Identifiant: "alice", Nom: "Alice", Age: 29}},

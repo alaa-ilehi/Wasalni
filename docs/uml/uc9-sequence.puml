@@ -7,7 +7,7 @@ participant TrajetRepository
 database SQLite
 
 Conducteur -> API: PUT /rides/{id} ou DELETE /rides/{id}
-API -> API: vérifier X-User
+API -> API: vérifier le jeton (sessions)
 API -> GererTrajet: Modifier(...) / Supprimer(...)
 GererTrajet -> TrajetRepository: vérifier propriétaire et état
 TrajetRepository -> SQLite: BEGIN

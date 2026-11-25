@@ -35,7 +35,7 @@ func nouveauBanc(t *testing.T) *banc {
 	t.Cleanup(func() { db.Close() })
 
 	gerer := application.NouveauGererProfil(sqlite.NouveauProfilRepository(db), adaptateurPhoto{})
-	serveur := httptest.NewServer(api.Routes(api.Deps{Profils: gerer}))
+	serveur := httptest.NewServer(api.Routes(api.Deps{Authentification: identitePartagee.auth, Profils: gerer}))
 	t.Cleanup(serveur.Close)
 	return &banc{serveur: serveur}
 }
@@ -56,7 +56,7 @@ func (b *banc) appel(t *testing.T, methode, chemin, acteur, corps string) (int, 
 		t.Fatalf("requête : %v", err)
 	}
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
@@ -93,10 +93,10 @@ func TestIdentiteObligatoire(t *testing.T) {
 	} {
 		statut, charge := b.appel(t, cas.methode, "/profile", "", cas.corps)
 		if statut != http.StatusUnauthorized {
-			t.Errorf("%s sans X-User : statut = %d, attendu 401", cas.methode, statut)
+			t.Errorf("%s sans jeton : statut = %d, attendu 401", cas.methode, statut)
 		}
 		if charge["error"] == nil {
-			t.Errorf("%s sans X-User : corps d'erreur absent", cas.methode)
+			t.Errorf("%s sans jeton : corps d'erreur absent", cas.methode)
 		}
 	}
 }

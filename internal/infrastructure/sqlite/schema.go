@@ -72,6 +72,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS ratings_unique
     ON ratings (ride_id, evaluator, target);
 `
 
+// Schema de l'authentification (UC13). Le compte et le profil sont séparés : un identifiant peut
+// s'inscrire avant d'avoir rempli son profil, et un profil créé par UC8 peut n'avoir aucun mot de
+// passe. Aucune clé étrangère vers users, donc : elle imposerait un profil à l'inscription.
+// Le jeton de session n'est jamais stocké en clair, seulement son hachage SHA-256.
+const schemaIdentite = `
+CREATE TABLE IF NOT EXISTS credentials (
+    user_id    TEXT PRIMARY KEY,
+    salt       BLOB NOT NULL,
+    hash       BLOB NOT NULL,
+    iterations INTEGER NOT NULL CHECK (iterations > 0),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
+`
+
 // AppliquerSchema crée les tables manquantes. Rejouable sur une base existante.
 func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 	for _, table := range []struct{ nom, ddl string }{
@@ -79,6 +102,7 @@ func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 		{"rides", schemaTrajet},
 		{"bookings", schemaReservation},
 		{"ratings", schemaEvaluation},
+		{"identite", schemaIdentite},
 	} {
 		if _, err := db.ExecContext(ctx, table.ddl); err != nil {
 			return fmt.Errorf("application du schéma %s : %w", table.nom, err)

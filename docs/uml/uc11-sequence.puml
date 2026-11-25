@@ -9,8 +9,8 @@ participant "domain.TrajetFinRepository\n(sqlite)" as Trajets
 database "rides" as DB
 participant "notifications.Journal" as Notif
 
-Conducteur -> API : POST /rides/{id}/complete\nX-User: alice
-API -> API : identite(X-User)
+Conducteur -> API : POST /rides/{id}/complete\nAuthorization: Bearer <jeton>
+API -> API : Resoudre(jeton)
 alt identité absente
   API --> Conducteur : 401
 else identité présente

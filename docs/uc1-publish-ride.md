@@ -1,14 +1,14 @@
 # UC1 - Publier un trajet
 
 - **Acteur principal :** Conducteur. **Acteur secondaire :** Système de notification (UC12, prévu mais non branché sur la publication dans la version livrée).
-- **Préconditions :** l'utilisateur est identifié par l'en-tête `X-User` ; il agit comme conducteur.
+- **Préconditions :** l'utilisateur est identifié par un jeton de session (`Authorization: Bearer …`) ; il agit comme conducteur.
 - **Postconditions (succès) :** le trajet existe avec `PUBLISHED`, autant de places disponibles que de places totales, et le délai d'annulation `X` stocké sur le trajet ; le conducteur en est le propriétaire.
 
 Fiche issue du [cas d'utilisation UC1](use-case-elaboration.md#uc1---publier-un-trajet). Séquence : [uml/uc1-sequence.puml](uml/uc1-sequence.puml). Modèle de classes : [uml/class-model.puml](uml/class-model.puml).
 
 ## Scénario nominal
 
-1. Le conducteur envoie `POST /rides` avec `X-User` et un corps JSON : origine, destination, heure de départ, places, prix et `X` facultatif.
+1. Le conducteur envoie `POST /rides` avec son jeton de session et un corps JSON : origine, destination, heure de départ, places, prix et `X` facultatif.
 2. L'adaptateur HTTP lit l'identité, borne le corps à 10 Mio, refuse les champs inconnus et décode la saisie.
 3. Le cas d'utilisation `PublierTrajet` construit le `Trajet` : places disponibles = places totales, statut `PUBLISHED`, délai par défaut de 2 h si `X` est absent.
 4. Le domaine valide avec `ValiderPublication(maintenant)`, l'heure venant du port `Horloge` (aucune lecture directe de l'horloge système).
@@ -33,7 +33,7 @@ Réponse `201` :
 
 | # | Condition | Résultat |
 |---|---|---|
-| A1 | `X-User` absent ou vide | `401` identité manquante |
+| A1 | jeton absent, inconnu ou expiré | `401` session absente, inconnue ou expirée |
 | A2 | Origine ou destination vide, ou les deux égales (sans tenir compte de la casse) | `400`, motif en français |
 | A3 | Places totales < 1, ou places disponibles hors de `[0, places_total]` | `400` |
 | A4 | Prix négatif | `400` |
@@ -46,7 +46,7 @@ Un refus de validation rend `{"error":"trajet invalide : l'origine et la destina
 
 ## Règles métier
 
-- Les clés du contrat sont en anglais (`origin`, `destination`, `departure_time`, `seats_total`, `price`, `cancel_delay_hours`) ; `departure` est accepté comme alias de `departure_time`. Le conducteur vient de `X-User`, jamais du corps.
+- Les clés du contrat sont en anglais (`origin`, `destination`, `departure_time`, `seats_total`, `price`, `cancel_delay_hours`) ; `departure` est accepté comme alias de `departure_time`. Le conducteur vient de la session, jamais du corps.
 - Origine et destination sont débarrassées de leurs espaces, obligatoires et différentes ; la comparaison est insensible à la casse.
 - Le départ est une date ISO 8601 strictement postérieure à l'instant fourni par l'horloge ; sans fuseau, il est lu en UTC.
 - `X` (`cancel_delay_hours`) est stocké sur le trajet, exprimé en heures décimales, par défaut 2 h ; il doit être positif ou nul et strictement inférieur au temps restant avant le départ. `X = 0` autorise une annulation jusqu'au départ (UC5). L'échéance est `departure - X`.

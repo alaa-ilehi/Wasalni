@@ -32,12 +32,15 @@ func (p profilsEnMemoire) ParIdentifiant(_ context.Context, identifiant string) 
 
 func getTrajet(t *testing.T, serveur *httptest.Server, identifiant, acteur string) (int, map[string]any) {
 	t.Helper()
+	if acteur == "" {
+		acteur = "lecteur"
+	}
 	requete, err := http.NewRequest(http.MethodGet, serveur.URL+"/rides/"+identifiant, nil)
 	if err != nil {
 		t.Fatalf("requête : %v", err)
 	}
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
@@ -58,7 +61,7 @@ func putProfil(t *testing.T, serveur *httptest.Server, acteur, corps string) (in
 		t.Fatalf("requête : %v", err)
 	}
 	requete.Header.Set("Content-Type", "application/json")
-	requete.Header.Set(api.EnTeteIdentite, acteur)
+	requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
 		t.Fatalf("appel : %v", err)
@@ -134,6 +137,7 @@ func TestConsulterTrajetIntrouvableOuTermineRenvoie404(t *testing.T) {
 	}
 
 	serveurTermine := httptest.NewServer(api.Routes(api.Deps{
+		Authentification: identitePartagee.auth,
 		Details: application.NouveauConsulterTrajet(
 			trajetsEnMemoire{"t1": {Identifiant: "t1", Conducteur: "alice", Statut: domain.TrajetTermine}},
 			profilsEnMemoire{},

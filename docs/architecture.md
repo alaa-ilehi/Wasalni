@@ -27,7 +27,7 @@ structurantes sont tracées en ADR (§16).
 | Aucune infrastructure serveur (cadre du TP) | un binaire unique, un fichier SQLite, lancement par `go run ./cmd/wasalni` |
 | Aucune chaîne de compilation C en CI | pilote `modernc.org/sqlite`, pur Go, sans cgo (ADR 0005, ADR 0009) |
 | Dépendances limitées à la bibliothèque standard, à `modernc.org/sqlite` et au codec WebP | routage `net/http`, JSON `encoding/json`, images `image` (+ `webp-go-pure` pour l'encodage), journaux `log/slog` (ADR 0009) |
-| Identité fournie par un système externe | en-tête `X-User`, aucune session, aucun mot de passe (ADR 0002) |
+| Authentification par session | jeton `Authorization: Bearer …`, mots de passe hachés PBKDF2, table `sessions` (ADR 0011) |
 | Photo stockée en base, poids borné | pipeline WebP sans perte, 512 px et 512 Kio au plus (ADR 0008) |
 | Documents et messages en français, contrat HTTP en anglais | erreurs métier en français, clés JSON en anglais (`name`, `age`, `sex`, `photo`) |
 
@@ -35,20 +35,20 @@ structurantes sont tracées en ADR (§16).
 
 | Élément | Rôle vis-à-vis du système |
 |---|---|
-| Client (interface web en français, non livrée) | appelle l'API HTTP et transporte l'identité dans l'en-tête `X-User` |
-| Système d'authentification (externe) | émet l'identité ; le service ne stocke aucun mot de passe et n'émet aucun jeton |
+| Client (interface web en français, non livrée) | appelle l'API HTTP et présente un jeton de session (`Authorization: Bearer …`) |
+| Système d'authentification | remplacé par UC13 : le service délivre lui-même les sessions, sans fournisseur externe (ADR 0011) |
 | Système de notification (externe) | recevra les événements de réservation et de fin de trajet ; le service n'a qu'un adaptateur de journal (ADR 0007) |
 | Fichier SQLite | persistance locale : profils (`users`), trajets (`rides`), réservations (`bookings`) |
 
-Le service ne dialogue jamais directement avec un utilisateur : tout passe par l'API. L'identité entre par l'en-tête et
-reste une donnée de confiance (ADR 0002).
+Le service ne dialogue jamais directement avec un utilisateur : tout passe par l'API. L'identité entre par un jeton de
+session vérifié en base (ADR 0011), et un mot de passe n'est conservé que haché.
 
 ## 4. Vue des conteneurs
 
 | Conteneur | Contenu | Dépend de |
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
-| `internal/api` | routeur `net/http` (`GET /health`, `GET /profile`, `PUT /profile`, `GET /rides`, `GET /rides/{id}`, `POST /rides`, `POST /rides/{id}/bookings`, `POST /rides/{id}/complete`, `POST /rides/{id}/ratings`), lecture de `X-User`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
+| `internal/api` | routeur `net/http` (quinze routes : `/health`, `/auth/register`, `/auth/login`, `/auth/session`, profil, trajets, réservations, terminaison, évaluations), résolution du jeton `Authorization: Bearer`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
 | `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC7 `ConsulterTrajet`, UC3 `ReserverPlace`, UC6 `EvaluerParticipant` et UC11 `TerminerTrajet` | `internal/domain` |
 | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, `Evaluation`, règles de validation, erreurs, ports | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
@@ -101,8 +101,8 @@ seule fois dans `cmd/wasalni/main.go`.
 Chaîne nominale d'UC11 : `Routes` → `TerminerTrajet` → `TrajetFinRepository` → `sqlite.TrajetRepository` → transition
 transactionnelle de `rides.status` vers `COMPLETED`, puis `NotificateurFinTrajet` → `notifications.Journal`.
 
-Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `X-User` et rend `ErrIdentiteManquante` si
-l'en-tête est absent (ADR 0002).
+Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `Authorization: Bearer <jeton>` et le résout par
+`Authentification.Resoudre` → `sessions` ; sans jeton valide la réponse est `401` (ADR 0011).
 
 ## 7. Ports et adaptateurs
 
@@ -133,17 +133,20 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | Méthode | Chemin | En-tête | Corps de requête | Réponses |
 |---|---|---|---|---|
 | `GET` | `/health` | — | — | `200` `{"statut":"ok"}` |
-| `GET` | `/profile` | `X-User` requis | — | `200` profil, `401` identité absente, `404` profil introuvable, `500` erreur inattendue |
-| `PUT` | `/profile` | `X-User` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
+| `POST` | `/auth/register` | — | `{id, password}` | `201` compte et jeton, `400` mot de passe hors bornes ou corps invalide, `409` identifiant déjà inscrit, `500` erreur inattendue |
+| `POST` | `/auth/login` | — | `{id, password}` | `200` jeton, `400` corps invalide, `401` identifiant ou mot de passe incorrect (message unique), `500` erreur inattendue |
+| `DELETE` | `/auth/session` | `Authorization: Bearer` requis | — | `204` session fermée, `401` session absente ou inconnue, `500` erreur inattendue |
+| `GET` | `/profile` | `Authorization: Bearer` requis | — | `200` profil, `401` session absente, `404` profil introuvable, `500` erreur inattendue |
+| `PUT` | `/profile` | `Authorization: Bearer` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `GET` | `/rides` | — | — (`origin`, `destination`, `date` en query) | `200` liste triée par départ, `400` date invalide, `500` erreur inattendue |
 | `GET` | `/rides/{id}` | — | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `404` trajet inconnu ou terminé, `500` erreur inattendue |
-| `POST` | `/rides` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
-| `POST` | `/rides/{id}/bookings` | `X-User` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` identité absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
-| `PUT` | `/rides/{id}` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` | `200` trajet modifié, `400` saisie refusée, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
-| `DELETE` | `/rides/{id}` | `X-User` requis | — | `204` trajet supprimé, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
-| `POST` | `/rides/{id}/complete` | `X-User` requis | — | `200` trajet `COMPLETED`, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` déjà terminé, `500` erreur inattendue |
-| `DELETE` | `/bookings/{id}` | `X-User` requis | — | `204` annulée, `401` identité absente, `404` réservation inconnue ou non possédée, `409` déjà annulée ou échéance atteinte, `500` erreur inattendue |
-| `POST` | `/rides/{id}/ratings` | `X-User` requis | `{score, target, comment?}` | `201` évaluation créée, `400` note ou commentaire invalide, `401` identité absente, `403` non participant, `404` trajet inconnu, `409` trajet non terminé ou doublon, `500` erreur inattendue |
+| `POST` | `/rides` | `Authorization: Bearer` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
+| `POST` | `/rides/{id}/bookings` | `Authorization: Bearer` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` session absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
+| `PUT` | `/rides/{id}` | `Authorization: Bearer` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` | `200` trajet modifié, `400` saisie refusée, `401` session absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
+| `DELETE` | `/rides/{id}` | `Authorization: Bearer` requis | — | `204` trajet supprimé, `401` session absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
+| `POST` | `/rides/{id}/complete` | `Authorization: Bearer` requis | — | `200` trajet `COMPLETED`, `401` session absente, `403` non-propriétaire, `404` trajet inconnu, `409` déjà terminé, `500` erreur inattendue |
+| `DELETE` | `/bookings/{id}` | `Authorization: Bearer` requis | — | `204` annulée, `401` session absente, `404` réservation inconnue ou non possédée, `409` déjà annulée ou échéance atteinte, `500` erreur inattendue |
+| `POST` | `/rides/{id}/ratings` | `Authorization: Bearer` requis | `{score, target, comment?}` | `201` évaluation créée, `400` note ou commentaire invalide, `401` session absente, `403` non participant, `404` trajet inconnu, `409` trajet non terminé ou doublon, `500` erreur inattendue |
 
 Corps de requête (`SaisieProfil`) :
 
@@ -166,7 +169,7 @@ Règles du corps de requête :
 - Les champs inconnus sont refusés (`DisallowUnknownFields`) et un corps illisible donne `400` avec
   `{"error":"corps JSON invalide"}`.
 - Le corps est limité à 10 Mio (`api.TailleMaxCorps` via `http.MaxBytesReader`) ; au-delà, `413`.
-- `id` n'est jamais fourni par le client : il vient de `X-User`. Un appelant ne peut donc lire ou écrire que sa propre
+- `id` n'est jamais fourni par le client : il vient de la session. Un appelant ne peut donc lire ou écrire que sa propre
   ligne.
 
 Réservation (`POST /rides/{id}/bookings`) — aucun corps de requête, l'identité suffit. Réponse :
@@ -286,7 +289,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ratings_unique
 
 Invariants portés par le schéma ou par le domaine :
 
-- `id` est l'identité fournie par `X-User` : elle est créée par le système externe, jamais par ce service.
+- `id` est l'identité portée par la session : elle naît à l'inscription (`POST /auth/register`), jamais d'un en-tête transmis.
 - `age` est borné par un `CHECK` (18 à 99), doublé de la validation du domaine : une saisie hors bornes est refusée en
   `400`, pas par la base.
 - `sex` est facultatif et vaut `NULL` quand il n'est pas renseigné ; l'adaptateur écrit `NULL` pour la valeur vide.
@@ -353,7 +356,11 @@ correspondance est la responsabilité de l'adaptateur (`internal/api/http.go`, A
 
 | Erreur | Origine | Code HTTP |
 |---|---|---|
-| `application.ErrIdentiteManquante` | adaptation de l'identité (`internal/api/identite.go`) | 401 |
+| `application.ErrIdentiteManquante` | cas d'usage, acteur vide | 401 |
+| `domain.ErrSessionInvalide` | `internal/api/identite.go`, jeton absent, inconnu ou expiré | 401 |
+| `domain.ErrIdentifiantsInvalides` | cas d'usage `Authentification` (identifiant inconnu ou mot de passe faux) | 401 |
+| `domain.ErrIdentifiantDejaInscrit` | adaptateur SQLite, clé primaire déjà prise | 409 |
+| `domain.ErrMotDePasseInvalide` | cas d'usage `Authentification`, longueur hors bornes | 400 |
 | `domain.ErrProfilIntrouvable` | domaine, propagée par l'adaptateur SQLite | 404 |
 | `domain.ErrNomRequis` | domaine (`Profil.Valider`) | 400 |
 | `domain.ErrNomInvalide` | domaine | 400 |
@@ -387,8 +394,8 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   même le plus petit palier dépasse le budget (budget de poids surchargé par le test).
 - **Test d'intégration HTTP sur une base temporaire** : le test crée son fichier dans `t.TempDir()`, l'ouvre avec
   `sqlite.Ouvrir`, monte `api.Routes` sur un serveur `httptest` et vérifie le contrat de bout en bout — `401` sans
-  en-tête, `400` (nom, âge, image illisible), `201` à la création, `200` à la mise à jour, isolation entre deux valeurs de
-  `X-User`, `413` au-delà de 10 Mio.
+  jeton, `400` (nom, âge, image illisible), `201` à la création, `200` à la mise à jour, isolation entre deux sessions,
+  `413` au-delà de 10 Mio.
 - **Aucun test ne touche une base réelle** : chaque test crée la sienne et la supprime avec le répertoire temporaire.
 - **Tests d'UC1** : domaine — `ValiderPublication` accepte un trajet complet et refuse douze variantes (conducteur,
   origine, destination, places incohérentes, prix, délai, départ passé ou à l'instant, statut inconnu) ; cas d'usage —
@@ -427,9 +434,15 @@ créé s'il n'existe pas (`*.db` est ignoré par Git), les pragmas et le schéma
 
 ```bash
 curl -s localhost:8080/health
-curl -s -H 'X-User: amine' localhost:8080/profile
-curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
+# 1. s'inscrire (ou se connecter) : le jeton n'est rendu qu'ici
+JETON=$(curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' \
+        localhost:8080/auth/register | sed -E 's/.*"token":"([^"]+)".*/\1/')
+# 2. utiliser le jeton sur une route protégée
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/profile
+curl -s -X PUT -H "Authorization: Bearer $JETON" -H 'Content-Type: application/json' \
      -d '{"name":"Amine","age":24,"sex":"MALE"}' localhost:8080/profile
+# 3. fermer la session : le jeton devient inutilisable
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JETON" localhost:8080/auth/session
 ```
 
 ## 14. Correspondance UC → composants
@@ -437,7 +450,7 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC | Cas d'utilisation (Go) | Ports sollicités | État |
 |---|---|---|---|
 | UC8 | `GererProfil` (`internal/application/gerer_profil.go`) | `ProfilRepository`, `NormaliseurPhoto` | implémenté |
-| UC13 | `identite` (`internal/api/identite.go`) : lecture de `X-User` | — | partiel : l'identité est lue, pas vérifiée (système externe) |
+| UC13 | `Authentification` (`internal/application/authentification.go`) : inscription, connexion, déconnexion, résolution du jeton | `CredentialRepository`, `SessionRepository`, `HacheurMotDePasse` | implémenté : `/auth/register` (201), `/auth/login` (200), `DELETE /auth/session` (204) ; PBKDF2 avec sel par compte (ADR 0011) |
 | UC1 | `PublierTrajet` (`internal/application/publier_trajet.go`) | `TrajetRepository` (`Publier`), `Horloge` | implémenté : `POST /rides` (201/400/401) |
 | UC2 | `RechercherTrajets` (`internal/application/rechercher_trajets.go`) | `TrajetRepository` (`Rechercher`) | implémenté : `GET /rides` (200/400) |
 | UC7 | `ConsulterTrajet` (`internal/application/consulter_trajet.go`) | `TrajetRepository`, `ProfilRepository`, `EvaluationRepository` | implémenté : `GET /rides/{id}` (200/404), note du conducteur issue de UC6 (ADR 0010) |
@@ -458,8 +471,11 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
   pour une photo par profil, à revoir si le volume grandit (ADR 0008).
 - **Pas de frontend.** L'API est la seule surface ; le recadrage de la photo côté navigateur est prévu plus tard et n'est
   pas implémenté (ADR 0008).
-- **Pas d'authentification applicative.** `X-User` est cru sur parole : n'importe quel client connaissant un identifiant
-  peut agir en son nom. C'est une hypothèse du sujet, pas un oubli (ADR 0002).
+- **Authentification sans raffinements.** Pas de rafraîchissement de jeton (24 h puis reconnexion), pas de révocation
+  globale (changer un mot de passe ne ferme pas les sessions ouvertes), pas de limitation du nombre de tentatives : un
+  attaquant peut essayer en ligne. À traiter avant une exposition publique (ADR 0011).
+- **Coût de connexion.** PBKDF2 à 120 000 itérations coûte ~100 ms par inscription et par connexion, sur le cœur qui
+  sert la requête ; acceptable à cette échelle, à déporter si le service devient public.
 - **SQLite mono-fichier, une connexion.** `SetMaxOpenConns(1)` et `SetMaxIdleConns(1)` sérialisent les accès : une seule
   instance par déploiement, pas de réplication, écritures en file (ADR 0005).
 - **Pas de migrations versionnées.** Le schéma est idempotent (`CREATE TABLE IF NOT EXISTS`) ; la reconstruction de
@@ -467,15 +483,15 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Neuf UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9 et UC11 ont du code et des tests ; UC13 et UC12 restent
-  partiels (identité non vérifiée, journal au lieu d'un système de notification). UC10 reste à faire.
+- **Dix UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9, UC11 et UC13 ont du code et des tests ; UC12 reste
+  partiel (journal au lieu d'un système de notification). UC10 reste à faire.
 
 ## 16. Décisions (ADR)
 
 | ADR | Décision | Statut |
 |---|---|---|
 | [0001](adr/0001-couches-et-ports.md) | Quatre couches en paquets Go, dépendances vers l'intérieur, ports déclarés par le domaine | accepté |
-| [0002](adr/0002-identite-externe.md) | Identité fournie par un système externe, lue dans `internal/api/identite.go` | accepté |
+| [0002](adr/0002-identite-externe.md) | Identité lue dans `internal/api/identite.go` | révisé par 0011 |
 | [0003](adr/0003-reservation-deux-etats.md) | Réservation à deux états, `ACTIVE` ou `CANCELLED`, sans étape de confirmation | appliqué |
 | [0004](adr/0004-concurrence-sqlite.md) | Concurrence : index unique partiel et décrément conditionnel dans la transaction immédiate | appliqué |
 | [0005](adr/0005-persistance-sqlite.md) | SQLite sans ORM via `modernc.org/sqlite`, une connexion, schéma idempotent | accepté |

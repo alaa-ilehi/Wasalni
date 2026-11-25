@@ -40,9 +40,9 @@ func evaluationVersJSON(e domain.Evaluation) evaluationReponseJSON {
 }
 
 // enregistrerEvaluation : POST /rides/{id}/ratings (UC6), identité externe requise.
-func enregistrerEvaluation(evaluer application.EvaluerParticipant) http.HandlerFunc {
+func enregistrerEvaluation(evaluer application.EvaluerParticipant, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		identifiant, err := identite(r)
+		identifiant, err := identite(r, auth)
 		if err != nil {
 			repondreErreur(w, err)
 			return

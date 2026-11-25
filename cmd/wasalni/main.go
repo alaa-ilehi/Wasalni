@@ -15,6 +15,7 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/api"
 	"github.com/alaa-ilehi/wasalni/internal/application"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/notifications"
+	"github.com/alaa-ilehi/wasalni/internal/infrastructure/passwords"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
 )
@@ -59,18 +60,27 @@ func main() {
 	terminerTrajet := application.NouveauTerminerTrajet(trajets, notifications.NouveauJournal(journal))
 	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notifications.NouveauJournal(journal))
 
+	// UC13 : les comptes et les sessions vivent à côté des profils ; aucun jeton n'est stocké en clair.
+	authentification := application.NouvelleAuthentification(
+		sqlite.NouveauCredentialRepository(db),
+		sqlite.NouveauSessionRepository(db),
+		passwords.Hacheur{},
+		horlogeReelle{},
+	)
+
 	serveur := &http.Server{
 		Addr: *adresse,
 		Handler: api.Routes(api.Deps{
-			Profils:        gererProfil,
-			Recherches:     rechercherTrajets,
-			Trajets:        publierTrajet,
-			Details:        consulterTrajet,
-			Reservations:   reserverPlace,
-			Annulations:    annulerReservation,
-			Terminaisons:   terminerTrajet,
-			GestionTrajets: gererTrajet,
-			Evaluations:    evaluerParticipant,
+			Profils:          gererProfil,
+			Recherches:       rechercherTrajets,
+			Trajets:          publierTrajet,
+			Details:          consulterTrajet,
+			Reservations:     reserverPlace,
+			Annulations:      annulerReservation,
+			Terminaisons:     terminerTrajet,
+			GestionTrajets:   gererTrajet,
+			Evaluations:      evaluerParticipant,
+			Authentification: authentification,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

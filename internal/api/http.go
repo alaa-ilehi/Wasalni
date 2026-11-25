@@ -15,7 +15,9 @@ import (
 // Le domaine et l'application n'en connaissent aucun code.
 func statutHTTP(err error) int {
 	switch {
-	case errors.Is(err, application.ErrIdentiteManquante):
+	case errors.Is(err, application.ErrIdentiteManquante),
+		errors.Is(err, domain.ErrIdentifiantsInvalides),
+		errors.Is(err, domain.ErrSessionInvalide):
 		return http.StatusUnauthorized
 	case errors.Is(err, domain.ErrProfilIntrouvable),
 		errors.Is(err, domain.ErrTrajetIntrouvable),
@@ -32,12 +34,14 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrReservationDejaAnnulee),
 		errors.Is(err, domain.ErrAnnulationHorsDelai),
 		errors.Is(err, domain.ErrTrajetNonTermine),
-		errors.Is(err, domain.ErrEvaluationDejaFaite):
+		errors.Is(err, domain.ErrEvaluationDejaFaite),
+		errors.Is(err, domain.ErrIdentifiantDejaInscrit):
 		return http.StatusConflict
 	case errors.Is(err, domain.ErrNomRequis),
 		errors.Is(err, domain.ErrNomInvalide),
 		errors.Is(err, domain.ErrAgeInvalide),
 		errors.Is(err, domain.ErrSexeInvalide),
+		errors.Is(err, domain.ErrMotDePasseInvalide),
 		errors.Is(err, domain.ErrTrajetInvalide),
 		errors.Is(err, domain.ErrConducteurNePeutPasReserver),
 		errors.Is(err, application.ErrPhotoInvalide),

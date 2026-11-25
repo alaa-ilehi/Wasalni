@@ -7,11 +7,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/alaa-ilehi/wasalni/internal/api"
 )
 
 func getTrajets(t *testing.T, serveur *httptest.Server, chemin string) (int, []map[string]any, string) {
 	t.Helper()
-	reponse, err := http.Get(serveur.URL + chemin)
+	requete, err := http.NewRequest(http.MethodGet, serveur.URL+chemin, nil)
+	if err != nil {
+		t.Fatalf("requête : %v", err)
+	}
+	requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, "lecteur"))
+	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
 		t.Fatalf("appel : %v", err)
 	}
@@ -83,7 +90,12 @@ func TestRechercherTrajetsFiltreEtTrie(t *testing.T) {
 func TestRechercherTrajetsRefuseUneDateInvalide(t *testing.T) {
 	serveur := bancTrajets(t)
 
-	reponse, err := http.Get(serveur.URL + "/rides?date=hier")
+	requete, err := http.NewRequest(http.MethodGet, serveur.URL+"/rides?date=hier", nil)
+	if err != nil {
+		t.Fatalf("requête : %v", err)
+	}
+	requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, "lecteur"))
+	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
 		t.Fatalf("appel : %v", err)
 	}

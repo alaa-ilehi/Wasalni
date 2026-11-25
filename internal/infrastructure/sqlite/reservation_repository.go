@@ -13,9 +13,13 @@ import (
 	moderncsqlite "modernc.org/sqlite"
 )
 
-// codeContrainteUnique : SQLITE_CONSTRAINT_UNIQUE, renvoyé quand l'index partiel refuse un second
-// enregistrement ACTIVE pour le même couple (trajet, passager).
-const codeContrainteUnique = 2067
+// Codes SQLite d'un doublon : SQLITE_CONSTRAINT_UNIQUE pour un index partiel (une réservation ACTIVE
+// déjà posée) et SQLITE_CONSTRAINT_PRIMARYKEY pour une clé primaire déjà prise (un identifiant déjà
+// inscrit).
+const (
+	codeContrainteUnique   = 2067
+	codeContraintePrimaire = 1555
+)
 
 // ReservationRepository : adaptateur SQLite du port domain.ReservationRepository.
 type ReservationRepository struct {
@@ -233,5 +237,9 @@ func nouvelIdentifiant() (string, error) {
 // estViolationUnique reconnaît la contrainte d'unicité, sans dépendre du texte du message.
 func estViolationUnique(err error) bool {
 	var erreurSQLite *moderncsqlite.Error
-	return errors.As(err, &erreurSQLite) && erreurSQLite.Code() == codeContrainteUnique
+	if !errors.As(err, &erreurSQLite) {
+		return false
+	}
+	code := erreurSQLite.Code()
+	return code == codeContrainteUnique || code == codeContraintePrimaire
 }

@@ -153,7 +153,44 @@ package "internal/domain" {
     Évaluateur et cible distincts, tous deux participants
     Une seule évaluation par couple et par trajet (index unique)
   end note
-}
+
+  class Credential {
+    Identifiant : string
+    Sel : []byte
+    Condensat : []byte
+    Iterations : int
+  }
+
+  note right of Credential
+    Sel aléatoire de 16 octets, unique par compte
+    Condensat = PBKDF2-HMAC-SHA256(mot de passe, sel, iterations)
+    Iterations stockées par ligne : le coût peut augmenter
+    sans invalider les comptes existants (ADR 0011)
+  end note
+
+  class Session {
+    Jeton : string
+    Identifiant : string
+    CreeeLe : time.Time
+    ExpireLe : time.Time
+  }
+
+  note right of Session
+    Jeton opaque de 32 octets (base64url)
+    Seule son empreinte SHA-256 est persistée
+    Durée de vie 24 h, purge paresseuse à la lecture
+  end note
+
+  interface CredentialRepository {
+    Enregistrer(ctx, Credential) : error
+    ParIdentifiant(ctx, identifiant) : (Credential, error)
+  }
+
+  interface SessionRepository {
+    Creer(ctx, Session) : error
+    ParJeton(ctx, jeton, maintenant) : (Session, error)
+    Supprimer(ctx, jeton) : error
+  }
 
 package "internal/application" {
   interface NormaliseurPhoto {
@@ -301,7 +338,30 @@ package "internal/application" {
     Les deux parties doivent avoir une réservation
     Ligne annulée acceptée : participation antérieure
   end note
-}
+
+  class Authentification {
+    credentials : CredentialRepository
+    sessions : SessionRepository
+    hacheur : HacheurMotDePasse
+    horloge : Horloge
+    Inscrire(ctx, identifiant, motDePasse) : (string, error)
+    Connecter(ctx, identifiant, motDePasse) : (string, error)
+    Deconnecter(ctx, jeton) : error
+    Resoudre(ctx, jeton) : (string, error)
+  }
+
+  interface HacheurMotDePasse {
+    Hacher(motDePasse) : (Credential, error)
+    Verifier(motDePasse, Credential) : bool
+  }
+
+  note right of Authentification
+    Inscription : 201, identifiant déjà pris → ErrIdentifiantDejaInscrit (409)
+    Connexion : 200, identifiant inconnu ou mot de passe faux
+      → ErrIdentifiantsInvalides (401), message unique
+    Jeton : 32 octets base64url, rendu une fois, stocké haché
+    DuréeSession = 24 h ; jeton expiré → ErrSessionInvalide (401)
+  end note
 
 package "internal/infrastructure/sqlite" {
   class "ProfilRepository\n(adaptateur SQLite)" as SqliteProfilRepository {
@@ -341,6 +401,17 @@ package "internal/infrastructure/sqlite" {
     COMMIT atomique
   end note
 
+  class SqliteCredentialRepository {
+    Enregistrer(ctx, Credential) : error
+    ParIdentifiant(ctx, identifiant) : (Credential, error)
+  }
+
+  class SqliteSessionRepository {
+    Creer(ctx, Session) : error
+    ParJeton(ctx, jeton, maintenant) : (Session, error)
+    Supprimer(ctx, jeton) : error
+  }
+
   class Ouverture <<fonctions>> {
     Ouvrir(ctx, chemin) : (*sql.DB, error)
     AppliquerSchema(ctx, db) : error
@@ -356,7 +427,8 @@ package "internal/infrastructure/sqlite" {
     PRAGMA journal_mode = WAL
     PRAGMA busy_timeout = 5000
     PRAGMA foreign_keys = ON
-    tables users, rides, bookings et ratings
+    tables users, rides, bookings, ratings,
+    credentials et sessions
     (CREATE TABLE IF NOT EXISTS)
   end note
 }
@@ -398,10 +470,14 @@ package "internal/api" {
     DELETE /rides/{id}
     DELETE /bookings/{id}
     POST /rides/{id}/ratings
+    POST /auth/register
+    POST /auth/login
+    DELETE /auth/session
   }
 
   class identite <<fonction>> {
-    identite(*http.Request) : (string, error)
+    identite(*http.Request, Authentification) : (string, error)
+    jetonBearer(*http.Request) : (string, error)
   }
 
   class statutHTTP <<table unique>> {
@@ -409,8 +485,9 @@ package "internal/api" {
   }
 
   note right of identite
-    En-tête X-User obligatoire
-    vide ou absent : ErrIdentiteManquante (401)
+    Authorization: Bearer <jeton> obligatoire
+    sur toutes les routes sauf /health et /auth/*
+    jeton absent, inconnu ou expiré : ErrSessionInvalide (401)
   end note
 }
 
@@ -504,7 +581,8 @@ Routes --> AnnulerReservation : appelle
 Routes --> TerminerTrajet : appelle
 Routes --> GererTrajet : appelle
 Routes --> EvaluerParticipant : appelle
-Routes ..> identite : lit X-User
+Routes --> Authentification : appelle (inscription, connexion, déconnexion)
+Routes ..> identite : résout le jeton Bearer
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
 
@@ -513,6 +591,14 @@ Racine --> SqliteTrajetRepository : instancie une fois,\npartagé par UC1, UC2, 
 Racine --> SqliteReservationRepository : instancie
 Racine --> SqliteEvaluationRepository : instancie
 Racine --> normaliseurPhoto : instancie
+Racine --> Authentification : instancie (hacheur PBKDF2)
+Racine --> SqliteCredentialRepository : instancie
+Racine --> SqliteSessionRepository : instancie
+Authentification --> CredentialRepository : dépend
+Authentification --> SessionRepository : dépend
+Authentification --> HacheurMotDePasse : dépend
+SqliteCredentialRepository ..|> CredentialRepository
+SqliteSessionRepository ..|> SessionRepository
 Racine --> horlogeReelle : instancie
 Racine --> GererProfil : câble
 Racine --> PublierTrajet : câble
