@@ -24,6 +24,8 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrTrajetNonProprietaire):
 		return http.StatusForbidden
 	case errors.Is(err, domain.ErrTrajetComplet),
+		errors.Is(err, domain.ErrPlacesInsuffisantes),
+		errors.Is(err, domain.ErrTrajetSupprime),
 		errors.Is(err, domain.ErrTrajetDejaTermine),
 		errors.Is(err, domain.ErrReservationDejaActive),
 		errors.Is(err, domain.ErrTrajetNonTermine),

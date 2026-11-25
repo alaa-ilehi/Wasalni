@@ -152,6 +152,49 @@ func TestParIdentifiantRefuseUnTrajetInconnu(t *testing.T) {
 	}
 }
 
+func TestUC9ModifierAjustePlacesEtSupprimerAnnuleReservations(t *testing.T) {
+	ctx := context.Background()
+	depot, reservations, fermer := baseTrajet(t)
+	defer fermer()
+	cree, err := depot.Publier(ctx, trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, passager := range []string{"alice", "carol"} {
+		if _, err := reservations.Reserver(ctx, domain.Reservation{Trajet: cree.Identifiant, Passager: passager, Statut: domain.ReservationActive}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	modifie := trajetAPublier()
+	modifie.Identifiant = cree.Identifiant
+	modifie.Origine = "Paris"
+	modifie.PlacesTotal = 2
+	misAJour, err := depot.Modifier(ctx, modifie, "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if misAJour.Origine != "Paris" || misAJour.Places != 0 {
+		t.Fatalf("trajet modifié = %+v", misAJour)
+	}
+	modifie.PlacesTotal = 1
+	if _, err := depot.Modifier(ctx, modifie, "bob"); !errors.Is(err, domain.ErrPlacesInsuffisantes) {
+		t.Fatalf("places insuffisantes: %v", err)
+	}
+	if err := depot.Supprimer(ctx, cree.Identifiant, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := depot.ParIdentifiant(ctx, cree.Identifiant); !errors.Is(err, domain.ErrTrajetIntrouvable) {
+		t.Fatalf("trajet supprimé visible: %v", err)
+	}
+	listed, err := reservations.ParPassager(ctx, "alice")
+	if err != nil || len(listed) != 1 || listed[0].Statut != domain.ReservationAnnulee {
+		t.Fatalf("réservation après suppression = %+v, %v", listed, err)
+	}
+	if _, err := reservations.Reserver(ctx, domain.Reservation{Trajet: cree.Identifiant, Passager: "dave", Statut: domain.ReservationActive}); !errors.Is(err, domain.ErrTrajetComplet) {
+		t.Fatalf("nouvelle réservation après suppression: %v", err)
+	}
+}
+
 // Le compteur de places est consommé par la réservation : la lecture suivante voit 2 places sur 3.
 func TestReserverDecrementeLesPlaces(t *testing.T) {
 	ctx := context.Background()

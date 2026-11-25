@@ -18,6 +18,8 @@ const (
 var (
 	ErrTrajetNonProprietaire = errors.New("le trajet appartient à un autre conducteur")
 	ErrTrajetDejaTermine     = errors.New("le trajet est déjà terminé")
+	ErrPlacesInsuffisantes   = errors.New("le nombre de places est inférieur aux réservations actives")
+	ErrTrajetSupprime        = errors.New("le trajet est supprimé")
 )
 
 // DureeDelaiAnnulationParDefaut : valeur retenue quand la publication n'en fournit pas (fiche UC1).
@@ -38,6 +40,7 @@ type Trajet struct {
 	Prix            float64
 	DelaiAnnulation time.Duration
 	Statut          StatutTrajet
+	Supprime        bool
 	CreeLe          time.Time
 }
 

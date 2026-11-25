@@ -8,6 +8,8 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
 
 ## Décisions
 
+- L'implémentation UC9 est détaillée dans [uc9-edit-ride.md](uc9-edit-ride.md).
+
 - L'annulation par le passager (UC5) est possible jusqu'à `departure - X`.
 - `X` est choisi par le conducteur lors de la publication (UC1) et stocké avec le trajet.
 - Le conducteur marque le trajet comme terminé (UC11) ; cela débloque les évaluations (UC6).

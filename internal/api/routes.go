@@ -15,13 +15,14 @@ const TailleMaxCorps = 10 << 20
 
 // Deps regroupe les cas d'utilisation exposés par l'API. La racine de composition les fournit.
 type Deps struct {
-	Profils      application.GererProfil
-	Recherches   application.RechercherTrajets
-	Trajets      application.PublierTrajet
-	Details      application.ConsulterTrajet
-	Reservations application.ReserverPlace
-	Terminaisons application.TerminerTrajet
-	Evaluations  application.EvaluerParticipant
+	Profils        application.GererProfil
+	Recherches     application.RechercherTrajets
+	Trajets        application.PublierTrajet
+	Details        application.ConsulterTrajet
+	Reservations   application.ReserverPlace
+	Terminaisons   application.TerminerTrajet
+	GestionTrajets application.GererTrajet
+	Evaluations    application.EvaluerParticipant
 }
 
 // Routes construit le routeur HTTP du service (Go 1.22 : motifs avec méthode).
@@ -37,8 +38,49 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations))
 	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons))
+	mux.HandleFunc("PUT /rides/{id}", modifierTrajet(deps.GestionTrajets))
+	mux.HandleFunc("DELETE /rides/{id}", supprimerTrajet(deps.GestionTrajets))
 	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations))
 	return mux
+}
+
+func modifierTrajet(gerer application.GererTrajet) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, TailleMaxCorps)
+		var saisie application.SaisieTrajet
+		decodeur := json.NewDecoder(r.Body)
+		decodeur.DisallowUnknownFields()
+		if err := decodeur.Decode(&saisie); err != nil {
+			repondreJSON(w, http.StatusBadRequest, erreurJSON{Erreur: "corps JSON invalide"})
+			return
+		}
+		trajet, err := gerer.Modifier(r.Context(), acteur, r.PathValue("id"), saisie)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusOK, trajetVersJSON(trajet))
+	}
+}
+
+func supprimerTrajet(gerer application.GererTrajet) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		if err := gerer.Supprimer(r.Context(), acteur, r.PathValue("id")); err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		repondreJSON(w, http.StatusNoContent, nil)
+	}
 }
 
 // terminerTrajet : POST /rides/{id}/complete, clôt le trajet du conducteur identifié.

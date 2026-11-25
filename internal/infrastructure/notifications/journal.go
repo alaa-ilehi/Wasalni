@@ -34,3 +34,13 @@ func (j *Journal) NotifierFinTrajet(_ context.Context, trajet domain.Trajet) err
 		"conducteur", trajet.Conducteur)
 	return nil
 }
+
+func (j *Journal) NotifierModificationTrajet(_ context.Context, trajet domain.Trajet) error {
+	j.journal.Info("trajet modifié; notification aux passagers à transmettre par UC12", "trajet", trajet.Identifiant, "conducteur", trajet.Conducteur)
+	return nil
+}
+
+func (j *Journal) NotifierSuppressionTrajet(_ context.Context, trajet domain.Trajet) error {
+	j.journal.Info("trajet supprimé; notification aux passagers à transmettre par UC12", "trajet", trajet.Identifiant, "conducteur", trajet.Conducteur)
+	return nil
+}
