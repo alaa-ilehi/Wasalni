@@ -22,6 +22,8 @@ func TestLesLecturesPubliquesUtilisentUnIndex(t *testing.T) {
 		requete string
 		args    []any
 		index   string
+		// balayage : le balayage complet que l'index doit éviter (« SCAN rides » par défaut).
+		balayage string
 	}{
 		"recherche UC2 paginée": {
 			requete: requeteRecherche + clauseCurseur + finRecherche,
@@ -37,6 +39,12 @@ func TestLesLecturesPubliquesUtilisentUnIndex(t *testing.T) {
 			requete: requeteParConducteur,
 			args:    []any{"bob"},
 			index:   "rides_driver",
+		},
+		"réservations et trajets d'un passager (UC10)": {
+			requete:  requeteReservationsAvecTrajets,
+			args:     []any{"alice"},
+			index:    "bookings_passenger",
+			balayage: "SCAN bookings",
 		},
 	}
 
@@ -62,8 +70,12 @@ func TestLesLecturesPubliquesUtilisentUnIndex(t *testing.T) {
 			}
 
 			explication := strings.Join(plan, " | ")
-			if strings.Contains(explication, "SCAN rides") {
-				t.Fatalf("la requête balaie rides au lieu d'utiliser l'index %s : %s", cas.index, explication)
+			balayage := cas.balayage
+			if balayage == "" {
+				balayage = "SCAN rides"
+			}
+			if strings.Contains(explication, balayage) {
+				t.Fatalf("la requête fait un %s au lieu d'utiliser l'index %s : %s", balayage, cas.index, explication)
 			}
 			if !strings.Contains(explication, cas.index) {
 				t.Fatalf("l'index %s n'apparaît pas dans le plan : %s", cas.index, explication)
@@ -85,7 +97,7 @@ func TestLesIndexSurviventALaReapplicationDuSchema(t *testing.T) {
 		if err := AppliquerSchema(ctx, db); err != nil {
 			t.Fatalf("application du schéma (tour %d) : %v", tour, err)
 		}
-		for _, index := range []string{"rides_search", "rides_driver"} {
+		for _, index := range []string{"rides_search", "rides_driver", "bookings_passenger"} {
 			var nom string
 			err := db.QueryRowContext(ctx,
 				`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, index).Scan(&nom)

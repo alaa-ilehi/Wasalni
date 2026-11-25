@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"errors"
 
 	"github.com/alaa-ilehi/wasalni/internal/domain"
 )
@@ -36,11 +35,10 @@ type ReservationSuivie struct {
 // MesReservations : UC10, les réservations détenues par l'appelant, les deux états compris.
 type MesReservations struct {
 	reservations domain.ReservationRepository
-	trajets      domain.TrajetRepository
 }
 
-func NouveauMesReservations(reservations domain.ReservationRepository, trajets domain.TrajetRepository) MesReservations {
-	return MesReservations{reservations: reservations, trajets: trajets}
+func NouveauMesReservations(reservations domain.ReservationRepository) MesReservations {
+	return MesReservations{reservations: reservations}
 }
 
 // Executer rend les réservations du passager, de la plus récente à la plus ancienne, enrichies du trajet
@@ -49,23 +47,14 @@ func (uc MesReservations) Executer(ctx context.Context, passager string) ([]Rese
 	if passager == "" {
 		return nil, ErrIdentiteManquante
 	}
-	liste, err := uc.reservations.ParPassager(ctx, passager)
+	// Le trajet est joint par le dépôt : une requête, quel que soit le nombre de réservations.
+	paires, err := uc.reservations.ParPassagerAvecTrajet(ctx, passager)
 	if err != nil {
 		return nil, err
 	}
-	suivies := make([]ReservationSuivie, 0, len(liste))
-	for _, reservation := range liste {
-		suivie := ReservationSuivie{Reservation: reservation}
-		trajet, err := uc.trajets.ParIdentifiant(ctx, reservation.Trajet)
-		switch {
-		case err == nil:
-			suivie.Trajet = &trajet
-		case errors.Is(err, domain.ErrTrajetIntrouvable):
-			// Trajet supprimé (UC9) : la réservation reste listée sans son trajet.
-		default:
-			return nil, err
-		}
-		suivies = append(suivies, suivie)
+	suivies := make([]ReservationSuivie, 0, len(paires))
+	for _, paire := range paires {
+		suivies = append(suivies, ReservationSuivie{Reservation: paire.Reservation, Trajet: paire.Trajet})
 	}
 	return suivies, nil
 }

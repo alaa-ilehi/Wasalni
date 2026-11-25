@@ -185,6 +185,98 @@ WHERE b.id = ? AND b.passenger = ?`
 	return reservation, nil
 }
 
+// requeteReservationsAvecTrajets : UC10, réservations d'un passager et trajet visé en une seule requête.
+// La condition deleted_at IS NULL est dans le ON de la jointure : un trajet supprimé (UC9) rend des
+// colonnes nulles sans faire disparaître la réservation du passager.
+const requeteReservationsAvecTrajets = `
+SELECT b.id, b.ride_id, b.passenger, b.status, b.created_at,
+       r.id, r.driver, r.origin, r.destination, r.departure, r.seats_total, r.seats_available,
+       r.price, r.cancel_delay_hours, r.status, r.created_at, r.deleted_at
+FROM bookings b
+LEFT JOIN rides r ON r.id = b.ride_id AND r.deleted_at IS NULL
+WHERE b.passenger = ?
+ORDER BY b.created_at DESC, b.id DESC`
+
+// ParPassagerAvecTrajet : UC10, la même liste que ParPassager, le trajet joint dans la même requête.
+// Une seule requête quel que soit le nombre de réservations, au lieu d'une lecture de trajet par ligne.
+func (r *ReservationRepository) ParPassagerAvecTrajet(ctx context.Context, passager string) ([]domain.ReservationAvecTrajet, error) {
+	lignes, err := r.db.QueryContext(ctx, requeteReservationsAvecTrajets, passager)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des réservations et de leurs trajets : %w", err)
+	}
+	defer func() { _ = lignes.Close() }()
+
+	suivies := make([]domain.ReservationAvecTrajet, 0, 4)
+	for lignes.Next() {
+		var (
+			reservation                                        domain.Reservation
+			identifiant, trajet, passagerLigne, statut, creeLe string
+			c                                                  champsTrajet
+			prix                                               sql.NullFloat64
+			delaiHeures                                        sql.NullFloat64
+			placesTotal, placesLibres                          sql.NullInt64
+			idTrajet, conducteur, origine, destination, depart sql.NullString
+			statutTrajet, creeLeTrajet                         sql.NullString
+		)
+		if err := lignes.Scan(
+			&identifiant,
+			&trajet,
+			&passagerLigne,
+			&statut,
+			&creeLe,
+			&idTrajet,
+			&conducteur,
+			&origine,
+			&destination,
+			&depart,
+			&placesTotal,
+			&placesLibres,
+			&prix,
+			&delaiHeures,
+			&statutTrajet,
+			&creeLeTrajet,
+			&c.supprimeLe,
+		); err != nil {
+			return nil, fmt.Errorf("lecture d'une réservation : %w", err)
+		}
+		horodatage, err := time.Parse(time.RFC3339, creeLe)
+		if err != nil {
+			return nil, fmt.Errorf("horodatage de création illisible %q : %w", creeLe, err)
+		}
+		reservation = domain.Reservation{
+			Identifiant: identifiant,
+			Trajet:      trajet,
+			Passager:    passagerLigne,
+			Statut:      domain.StatutReservation(statut),
+			CreeLe:      horodatage,
+		}
+		suivie := domain.ReservationAvecTrajet{Reservation: reservation}
+		if idTrajet.Valid {
+			c.identifiant = idTrajet.String
+			c.conducteur = conducteur.String
+			c.origine = origine.String
+			c.destination = destination.String
+			c.depart = depart.String
+			c.placesTotal = int(placesTotal.Int64)
+			c.placesLibres = int(placesLibres.Int64)
+			c.prix = prix.Float64
+			c.delaiHeures = delaiHeures.Float64
+			c.statut = statutTrajet.String
+			c.creeLe = creeLeTrajet.String
+			lie, err := c.trajet()
+			if err != nil {
+				return nil, fmt.Errorf("trajet joint illisible : %w", err)
+			}
+			suivie.Trajet = &lie
+		}
+		suivies = append(suivies, suivie)
+	}
+	if err := lignes.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des réservations : %w", err)
+	}
+	return suivies, nil
+}
+
 // ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne (ADR 0003 :
 // les deux états sont rendus, l'appelant décide de ce qu'il affiche).
 func (r *ReservationRepository) ParPassager(ctx context.Context, passager string) ([]domain.Reservation, error) {

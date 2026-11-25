@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_active_unique
     ON bookings (ride_id, passenger) WHERE status = 'ACTIVE';
+
+CREATE INDEX IF NOT EXISTS bookings_passenger
+    ON bookings (passenger, created_at DESC, id DESC);
 `
 
 // Schema des évaluations (UC6). Une seule note par couple (trajet, évaluateur, cible) ;

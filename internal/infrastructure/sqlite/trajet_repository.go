@@ -180,46 +180,63 @@ type scanneur interface {
 	Scan(dest ...any) error
 }
 
-// lireTrajet convertit une ligne SQL en trajet. Les colonnes texte sont lues puis converties :
+// champsTrajet : les colonnes brutes d'une ligne de trajet, avant conversion.
+type champsTrajet struct {
+	identifiant, conducteur, origine, destination string
+	depart, statut, creeLe                        string
+	supprimeLe                                    sql.NullString
+	delaiHeures                                   float64
+	placesTotal, placesLibres                     int
+	prix                                          float64
+}
+
+// trajet convertit les colonnes en trajet. Les colonnes texte sont lues puis converties :
 // aucune conversion implicite de SQLite vers time.Time.
+func (c champsTrajet) trajet() (domain.Trajet, error) {
+	depart, err := time.Parse(time.RFC3339, c.depart)
+	if err != nil {
+		return domain.Trajet{}, fmt.Errorf("départ illisible %q : %w", c.depart, err)
+	}
+	creeLe, err := time.Parse(time.RFC3339, c.creeLe)
+	if err != nil {
+		return domain.Trajet{}, fmt.Errorf("horodatage de création illisible %q : %w", c.creeLe, err)
+	}
+	return domain.Trajet{
+		Identifiant:     c.identifiant,
+		Conducteur:      c.conducteur,
+		Origine:         c.origine,
+		Destination:     c.destination,
+		Depart:          depart,
+		PlacesTotal:     c.placesTotal,
+		Places:          c.placesLibres,
+		Prix:            c.prix,
+		DelaiAnnulation: time.Duration(c.delaiHeures * float64(time.Hour)),
+		Statut:          domain.StatutTrajet(c.statut),
+		Supprime:        c.supprimeLe.Valid,
+		CreeLe:          creeLe,
+	}, nil
+}
+
+// lireTrajet convertit une ligne SQL en trajet.
 func lireTrajet(row scanneur) (domain.Trajet, error) {
-	var (
-		trajet                    domain.Trajet
-		depart, statut, creeLe    string
-		supprimeLe                sql.NullString
-		delaiHeures               float64
-		placesTotal, placesLibres int
-	)
+	var c champsTrajet
 	if err := row.Scan(
-		&trajet.Identifiant,
-		&trajet.Conducteur,
-		&trajet.Origine,
-		&trajet.Destination,
-		&depart,
-		&placesTotal,
-		&placesLibres,
-		&trajet.Prix,
-		&delaiHeures,
-		&statut,
-		&creeLe,
-		&supprimeLe,
+		&c.identifiant,
+		&c.conducteur,
+		&c.origine,
+		&c.destination,
+		&c.depart,
+		&c.placesTotal,
+		&c.placesLibres,
+		&c.prix,
+		&c.delaiHeures,
+		&c.statut,
+		&c.creeLe,
+		&c.supprimeLe,
 	); err != nil {
 		return domain.Trajet{}, err
 	}
-
-	var err error
-	if trajet.Depart, err = time.Parse(time.RFC3339, depart); err != nil {
-		return domain.Trajet{}, fmt.Errorf("départ illisible %q : %w", depart, err)
-	}
-	if trajet.CreeLe, err = time.Parse(time.RFC3339, creeLe); err != nil {
-		return domain.Trajet{}, fmt.Errorf("horodatage de création illisible %q : %w", creeLe, err)
-	}
-	trajet.PlacesTotal = placesTotal
-	trajet.Places = placesLibres
-	trajet.DelaiAnnulation = time.Duration(delaiHeures * float64(time.Hour))
-	trajet.Statut = domain.StatutTrajet(statut)
-	trajet.Supprime = supprimeLe.Valid
-	return trajet, nil
+	return c.trajet()
 }
 
 // ParIdentifiant rend le trajet demandé, ou domain.ErrTrajetIntrouvable.

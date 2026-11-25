@@ -27,6 +27,10 @@ func (d *depotAnnulationFaux) ParPassager(context.Context, string) ([]domain.Res
 	return nil, nil
 }
 
+func (d *depotAnnulationFaux) ParPassagerAvecTrajet(context.Context, string) ([]domain.ReservationAvecTrajet, error) {
+	return nil, nil
+}
+
 func (d *depotAnnulationFaux) Annuler(_ context.Context, id, passager string, maintenant time.Time) (domain.Reservation, error) {
 	d.appels++
 	d.id, d.passager, d.instant = id, passager, maintenant

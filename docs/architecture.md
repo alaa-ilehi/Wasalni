@@ -115,7 +115,7 @@ Identité : `Routes` → `identite` (`internal/api/identite.go`), qui lit `Autho
 | `domain.TrajetRepository` | `internal/domain/ports.go` | `Publier(ctx, Trajet) (Trajet, error)` rend le trajet créé, identifiant compris ; `ParIdentifiant(ctx, identifiant) (Trajet, error)` échoue avec `ErrTrajetIntrouvable` | `internal/infrastructure/sqlite/trajet_repository.go` |
 | `domain.TrajetFinRepository` | `internal/domain/ports.go` | `Terminer(ctx, id, conducteur)` effectue une seule transition vers `COMPLETED` | `internal/infrastructure/sqlite/trajet_repository.go` |
 | `application.Horloge` | `internal/application/publier_trajet.go` | `Maintenant() time.Time`, pour que les règles temporelles de UC1 soient testables | `horlogeReelle` dans `cmd/wasalni/main.go` |
-| `domain.ReservationRepository` | `internal/domain/ports.go` | `Reserver(ctx, Reservation) (Reservation, error)` ; échoue avec `ErrReservationDejaActive` si une réservation `ACTIVE` existe pour le couple (trajet, passager). `ParPassager(ctx, passager) ([]Reservation, error)` liste les réservations d'un passager, les deux états compris, de la plus récente à la plus ancienne | `internal/infrastructure/sqlite/reservation_repository.go` |
+| `domain.ReservationRepository` | `internal/domain/ports.go` | `Reserver(ctx, Reservation) (Reservation, error)` ; échoue avec `ErrReservationDejaActive` si une réservation `ACTIVE` existe pour le couple (trajet, passager). `ParPassager(ctx, passager) ([]Reservation, error)` liste les réservations d'un passager, les deux états compris, de la plus récente à la plus ancienne ; `ParPassagerAvecTrajet(ctx, passager) ([]ReservationAvecTrajet, error)` fait la même lecture en joignant le trajet, en une seule requête, avec `Trajet` à `nil` quand il a été supprimé | `internal/infrastructure/sqlite/reservation_repository.go` |
 | `application.Notificateur` | `internal/application/reserver_place.go` | `NotifierReservation(ctx, Reservation) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
 | `application.NotificateurFinTrajet` | `internal/application/terminer_trajet.go` | `NotifierFinTrajet(ctx, Trajet) error`, au mieux (ADR 0007) | `internal/infrastructure/notifications/journal.go` |
 | `domain.CredentialRepository` | `internal/domain/identite.go` | `Enregistrer(ctx, Credential) error` (un identifiant déjà inscrit rend `ErrIdentifiantDejaInscrit`), `ParIdentifiant(ctx, identifiant) (Credential, error)` (inconnu → `ErrIdentifiantsInvalides`) | `internal/infrastructure/sqlite/identite_repository.go` |
@@ -344,7 +344,16 @@ Invariants portés par le schéma ou par le domaine :
   Ils sont partiels parce que toutes les lectures filtrent déjà `deleted_at IS NULL` : l'index ne contient que les
   trajets lisibles, et `id` termine la clé pour que le tri `departure ASC, id ASC` et le curseur de pagination soient
   couverts par le même parcours. Un test exécute `EXPLAIN QUERY PLAN` sur les deux requêtes et échoue si le plan
-  contient `SCAN rides`. Une base créée avant la colonne `status` n'est pas indexée : elle ne peut de toute façon pas
+  contient `SCAN rides`.
+- Un index couvre la lecture de UC10, `WHERE passenger = ? ORDER BY created_at DESC, id DESC` avec le trajet joint :
+
+  ```sql
+  CREATE INDEX IF NOT EXISTS bookings_passenger ON bookings (passenger, created_at DESC, id DESC);
+  ```
+
+  Le tri secondaire est dans la clé, donc le parcours de l'index rend déjà les lignes dans l'ordre demandé. Le test
+  d'index explique aussi cette requête et refuse `SCAN bookings`. Sans lui, `GET /me/bookings` balayait `bookings`
+  entier avant même d'arriver à la jointure. Une base créée avant la colonne `status` n'est pas indexée : elle ne peut de toute façon pas
   servir la recherche, et rien n'y serait perdu à la reconstruire.
 - La recherche UC2 est paginée par **keyset**, pas par décalage : le curseur porte le couple `(departure, id)` de la
   dernière ligne rendue, la requête demande `LIMIT limite + 1` et la ligne supplémentaire dit s'il reste une page. Une
@@ -497,8 +506,10 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
 - **Tests d'UC11** : domaine — propriétaire et état ; application — identité requise et notification au mieux ; SQLite —
   propriétaire, identifiant inconnu, transition unique et appels concurrents ; HTTP/SQLite — `200`, `401`, `403`, `404`,
   `409`, état persisté et échec de notification sans annulation.
-- **Tests d'index et de pagination** : `index_test.go` explique les deux requêtes publiques (`EXPLAIN QUERY PLAN`) et
-  refuse `SCAN rides`, puis vérifie que les index survivent à une reapplication du schéma ; `recherche_paginee_test.go`
+- **Tests d'index et de pagination** : `index_test.go` explique les trois requêtes publiques (`EXPLAIN QUERY PLAN`) et
+  refuse `SCAN rides` comme `SCAN bookings`, `TestParPassagerAvecTrajetJointLeTrajetEtTolereLaSuppression` vérifie la
+  jointure (trajet rendu, trajet supprimé à `nil`) et
+  `TestMesReservationsNeDependPasDuNombreDeReservations` compte les appels au dépôt (un seul, dix réservations), puis vérifie que les index survivent à une reapplication du schéma ; `recherche_paginee_test.go`
   parcourt trois pages sans doublon ni perte, insère des trajets entre deux pages et refuse quatre curseurs illisibles ;
   `internal/api/recherche_paginee_test.go` couvre les bornes de `limit` (`1` et `200` acceptés, `0`, `201`, `abc` et
   `-5` refusés), le parcours par curseur et le `400` d'un `after` abîmé.
@@ -555,7 +566,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | UC12 | `Notificateur` → `notifications.Webhook` (`notifications.Journal` en repli) | `POST` JSON vers `WASALNI_NOTIFICATION_URL` | implémenté : cinq événements livrés au mieux après commit, 5 s de délai au plus (ADR 0007, ADR 0013) |
 | UC5 | `AnnulerReservation` (`internal/application/annuler_reservation.go`) | `ReservationRepository`, `Horloge`, `NotificateurAnnulation` | implémenté : `DELETE /bookings/{id}`, annulation et place rendue atomiquement |
 | UC9 | `GererTrajet` (`internal/application/gerer_trajet.go`) | `TrajetGestionRepository` | implémenté : modification et suppression logique, réservations annulées en transaction |
-| UC10 | `MesTrajets` et `MesReservations` (`internal/application/mes_trajets.go`) | `TrajetRepository` (`ParConducteur`), `ReservationRepository` (`ParPassager`) | implémenté : `GET /me/rides` et `GET /me/bookings`, filtrés sur l'identité de la session (`401` sans jeton) |
+| UC10 | `MesTrajets` et `MesReservations` (`internal/application/mes_trajets.go`) | `TrajetRepository` (`ParConducteur`), `ReservationRepository` (`ParPassagerAvecTrajet`, une requête jointe par appel) | implémenté : `GET /me/rides` et `GET /me/bookings`, filtrés sur l'identité de la session (`401` sans jeton) |
 
 ## 15. Dette et limites connues
 
