@@ -11,20 +11,26 @@ package "cmd/wasalni" {
 }
 
 package "internal/api" {
-  [Routes\nGET /health, GET/PUT /profile\nPOST /rides, POST /rides/{id}/bookings\nPOST /rides/{id}/complete] as Routes
+  [Routes\n12 routes HTTP\n(profil, trajets, réservations, notes)] as Routes
   [identité\nen-tête X-User] as Identite
   [statutHTTP\ntable erreur -> code HTTP] as Statut
 }
 
 package "internal/application" {
-  [GererProfil\n(cas d'utilisation UC8)] as GererProfil
-  [PublierTrajet\n(cas d'utilisation UC1)] as PublierTrajet
-  [ReserverPlace\n(cas d'utilisation UC3)] as ReserverPlace
-  [TerminerTrajet\n(cas d'utilisation UC11)] as TerminerTrajet
+  [GererProfil\n(UC8)] as GererProfil
+  [PublierTrajet\n(UC1)] as PublierTrajet
+  [RechercherTrajets\n(UC2)] as RechercherTrajets
+  [ReserverPlace\n(UC3)] as ReserverPlace
+  [AnnulerReservation\n(UC5)] as AnnulerReservation
+  [EvaluerParticipant\n(UC6)] as EvaluerParticipant
+  [ConsulterTrajet\n(UC7)] as ConsulterTrajet
+  [GererTrajet\n(UC9)] as GererTrajet
+  [TerminerTrajet\n(UC11)] as TerminerTrajet
   interface "NormaliseurPhoto" as INormaliseur
   interface "Horloge" as IHorloge
   interface "Notificateur" as INotificateur
-  interface "TrajetFinRepository" as ITerminer
+  interface "NotificateurAnnulation" as INotifAnnulation
+  interface "NotificateurGestionTrajet" as INotifGestion
   interface "NotificateurFinTrajet" as INotifFin
 }
 
@@ -32,15 +38,20 @@ package "internal/domain" {
   [Profil\nSexe, bornes, Valider()] as Profil
   [Trajet\nstatut, places, ValiderPublication()] as Trajet
   [Reservation\nACTIVE | CANCELLED] as Reservation
+  [Evaluation\nnote 1-5, couples distincts] as Evaluation
   interface "ProfilRepository" as IProfil
   interface "TrajetRepository" as ITrajet
+  interface "TrajetFinRepository" as ITerminer
+  interface "TrajetGestionRepository" as IGestion
   interface "ReservationRepository" as IReservation
+  interface "EvaluationRepository" as IEvaluation
 }
 
 package "internal/infrastructure/sqlite" {
   [ProfilRepository\n(adaptateur SQLite)] as SqlProfil
   [TrajetRepository\n(adaptateur SQLite)] as SqlTrajet
   [ReservationRepository\n(adaptateur SQLite)] as SqlReservation
+  [EvaluationRepository\n(adaptateur SQLite)] as SqlEvaluation
   [Ouverture\npragmas + schéma idempotent] as Ouverture
 }
 
@@ -49,10 +60,10 @@ package "internal/infrastructure/photos" {
 }
 
 package "internal/infrastructure/notifications" {
-  [Journal\névénements de réservation et fin de trajet] as Journal
+  [Journal\nréservation, annulation,\nfin, modification, suppression] as Journal
 }
 
-database "SQLite\n(tables users, rides, bookings)" as DB
+database "SQLite\n(tables users, rides, bookings, ratings)" as DB
 cloud "Système d'authentification\n(externe)" as ExternalAuth
 cloud "Système de notification\n(externe, non branché)" as ExternalNotif
 
@@ -62,7 +73,12 @@ ExternalAuth ..> Client : identité
 Routes --> Identite : lit l'identité
 Routes --> GererProfil : Consulter / Enregistrer
 Routes --> PublierTrajet : Executer
+Routes --> RechercherTrajets : Executer
+Routes --> ConsulterTrajet : Executer
 Routes --> ReserverPlace : Executer
+Routes --> AnnulerReservation : Executer
+Routes --> EvaluerParticipant : Executer
+Routes --> GererTrajet : Modifier / Supprimer
 Routes --> TerminerTrajet : Executer
 Routes ..> Statut : erreurs -> statut
 
@@ -74,10 +90,35 @@ PublierTrajet ..> ITrajet
 PublierTrajet ..> IHorloge
 PublierTrajet ..> Trajet : valide
 
+RechercherTrajets ..> ITrajet
+RechercherTrajets ..> Trajet : filtre les trajets publiés
+
 ReserverPlace ..> ITrajet
 ReserverPlace ..> IReservation
 ReserverPlace ..> INotificateur
 ReserverPlace ..> Reservation : valide
+
+AnnulerReservation ..> IReservation
+AnnulerReservation ..> IHorloge
+AnnulerReservation ..> INotifAnnulation
+AnnulerReservation ..> Reservation : valide l'annulation
+
+EvaluerParticipant ..> ITrajet
+EvaluerParticipant ..> IReservation
+EvaluerParticipant ..> IEvaluation
+EvaluerParticipant ..> Evaluation : valide
+
+ConsulterTrajet ..> ITrajet
+ConsulterTrajet ..> IProfil
+ConsulterTrajet ..> IEvaluation
+ConsulterTrajet ..> Trajet : rend le détail et la note
+
+GererTrajet ..> IGestion
+GererTrajet ..> ITrajet
+GererTrajet ..> IHorloge
+GererTrajet ..> INotifGestion
+GererTrajet ..> Trajet : valide propriétaire et état
+
 TerminerTrajet ..> ITerminer
 TerminerTrajet ..> INotifFin
 TerminerTrajet ..> Trajet : valide propriétaire et état
@@ -85,24 +126,36 @@ TerminerTrajet ..> Trajet : valide propriétaire et état
 IProfil <|.. SqlProfil
 ITrajet <|.. SqlTrajet
 ITerminer <|.. SqlTrajet
+IGestion <|.. SqlTrajet
 IReservation <|.. SqlReservation
+IEvaluation <|.. SqlEvaluation
 INormaliseur <|.. Photos
 INotificateur <|.. Journal
+INotifAnnulation <|.. Journal
+INotifGestion <|.. Journal
 INotifFin <|.. Journal
 
 SqlProfil --> DB : lecture / upsert transactionnel
-SqlTrajet --> DB : insertion / lecture d'un trajet
-SqlReservation --> DB : insertion sous index unique partiel
+SqlTrajet --> DB : insertion, recherche, transition d'état
+SqlReservation --> DB : décrément et restitution atomiques de la place
+SqlEvaluation --> DB : insertion sous index unique, moyenne
 SqlProfil ..> Ouverture : base ouverte et schéma appliqué
 
 Journal ..> ExternalNotif : appel prévu (UC12)
 
 Main --> SqlProfil : instancie
-Main --> SqlTrajet : instancie une fois,\npartagé par UC1 et UC3
+Main --> SqlTrajet : instancie une fois,\npartagé par UC1, UC2, UC3, UC7, UC9 et UC11
 Main --> SqlReservation : instancie
+Main --> SqlEvaluation : instancie
+Main --> Photos : instancie
 Main --> GererProfil : câble
 Main --> PublierTrajet : câble
+Main --> RechercherTrajets : câble
+Main --> ConsulterTrajet : câble
 Main --> ReserverPlace : câble
+Main --> AnnulerReservation : câble
+Main --> EvaluerParticipant : câble
+Main --> GererTrajet : câble
 Main --> TerminerTrajet : câble
 Main --> Routes : monte
 @enduml

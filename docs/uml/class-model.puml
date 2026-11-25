@@ -1,5 +1,5 @@
 @startuml
-title Wasalni - modèle de classes (UC1 publier, UC5 annuler, UC8 profil, UC11 terminer)
+title Wasalni - modèle de classes (UC1, UC2, UC3, UC5, UC6, UC7, UC8, UC9, UC11)
 
 skinparam classAttributeIconSize 0
 
@@ -36,6 +36,12 @@ package "internal/domain" {
     ParIdentifiant(ctx, identifiant) : (Profil, error)
   }
 
+  class CriteresRecherche {
+    Origine : string
+    Destination : string
+    Date : string
+  }
+
   class Trajet {
     Identifiant : string
     Conducteur : string
@@ -64,19 +70,41 @@ package "internal/domain" {
     Terminer(ctx, identifiant, conducteur) : (Trajet, error)
   }
 
+  interface TrajetGestionRepository {
+    Modifier(ctx, Trajet, conducteur) : (Trajet, error)
+    Supprimer(ctx, identifiant, conducteur) : error
+  }
+
   class Reservation {
     Identifiant : string
     Trajet : string
     Passager : string
     Statut : StatutReservation
     CreeLe : time.Time
-    ValiderAnnulation(passager, trajet, maintenant) : error
+    Valider() : error
+    ValiderAnnulation(passager, Trajet, maintenant) : error
   }
 
   interface ReservationRepository {
     Reserver(ctx, Reservation) : (Reservation, error)
     ParPassager(ctx, passager) : ([]Reservation, error)
     Annuler(ctx, identifiant, passager, maintenant) : (Reservation, error)
+  }
+
+  class Evaluation {
+    Identifiant : string
+    Trajet : string
+    Evaluateur : string
+    Cible : string
+    Note : int
+    Commentaire : string
+    CreeLe : time.Time
+    Valider() : error
+  }
+
+  interface EvaluationRepository {
+    Enregistrer(ctx, Evaluation) : (Evaluation, error)
+    Moyenne(ctx, identifiant) : (float64, int, error)
   }
 
   class Erreurs <<sentinelles>> {
@@ -89,9 +117,18 @@ package "internal/domain" {
     ErrTrajetIntrouvable
     ErrTrajetNonProprietaire
     ErrTrajetDejaTermine
+    ErrTrajetSupprime
+    ErrPlacesInsuffisantes
+    ErrTrajetComplet
     ErrReservationIntrouvable
+    ErrReservationDejaActive
     ErrReservationDejaAnnulee
     ErrAnnulationHorsDelai
+    ErrConducteurNePeutPasReserver
+    ErrEvaluationInvalide
+    ErrTrajetNonTermine
+    ErrNonParticipant
+    ErrEvaluationDejaFaite
   }
 
   note right of Profil
@@ -108,6 +145,13 @@ package "internal/domain" {
     DelaiAnnulation >= 0, defaut 2 h, < temps restant
     Places consommées atomiquement à la réservation (ADR 0004)
     Réservation et compteur modifiés dans la même transaction
+    UC9 : places >= réservations actives (ErrPlacesInsuffisantes)
+  end note
+
+  note right of Evaluation
+    Note entière de 1 à 5
+    Évaluateur et cible distincts, tous deux participants
+    Une seule évaluation par couple et par trajet (index unique)
   end note
 }
 
@@ -150,20 +194,39 @@ package "internal/application" {
     DelaiAnnulation : *float64
   }
 
+  note right of SaisieTrajet
+    Clés JSON : origin, destination, departure_time,
+    seats_total, price, cancel_delay_hours
+    departure = alias de departure_time
+    DelaiAnnulation absent = 2 h par defaut
+  end note
+
   class PublierTrajet {
     trajets : TrajetRepository
     horloge : Horloge
     Executer(ctx, conducteur, SaisieTrajet) : (Trajet, error)
   }
 
-  interface NotificateurFinTrajet {
-    NotifierFinTrajet(ctx, Trajet) : error
+  class RechercherTrajets {
+    trajets : TrajetRepository
+    Executer(ctx, CriteresRecherche) : ([]Trajet, error)
   }
 
-  class TerminerTrajet {
-    trajets : TrajetFinRepository
-    notificateur : NotificateurFinTrajet
-    Executer(ctx, conducteur, trajetID) : (Trajet, error)
+  note right of RechercherTrajets
+    Critères vides acceptés (liste complète)
+    Date au format AAAA-MM-JJ ; invalide : ErrRechercheInvalide (400)
+    Seuls les trajets PUBLISHED sont rendus, triés par départ
+  end note
+
+  interface Notificateur {
+    NotifierReservation(ctx, Reservation) : error
+  }
+
+  class ReserverPlace {
+    trajets : TrajetRepository
+    reservations : ReservationRepository
+    notifications : Notificateur
+    Executer(ctx, trajetID, passager) : (Reservation, error)
   }
 
   interface NotificateurAnnulation {
@@ -177,11 +240,66 @@ package "internal/application" {
     Executer(ctx, passager, reservationID) : (Reservation, error)
   }
 
-  note right of SaisieTrajet
-    Clés JSON : origin, destination, departure_time,
-    seats_total, price, cancel_delay_hours
-    departure = alias de departure_time
-    DelaiAnnulation absent = 2 h par defaut
+  interface NotificateurFinTrajet {
+    NotifierFinTrajet(ctx, Trajet) : error
+  }
+
+  class TerminerTrajet {
+    trajets : TrajetFinRepository
+    notificateur : NotificateurFinTrajet
+    Executer(ctx, conducteur, trajetID) : (Trajet, error)
+  }
+
+  interface NotificateurGestionTrajet {
+    NotifierModificationTrajet(ctx, Trajet) : error
+    NotifierSuppressionTrajet(ctx, Trajet) : error
+  }
+
+  class GererTrajet {
+    depot : TrajetGestionRepository
+    lecture : TrajetRepository
+    horloge : Horloge
+    notif : NotificateurGestionTrajet
+    Modifier(ctx, conducteur, id, SaisieTrajet) : (Trajet, error)
+    Supprimer(ctx, conducteur, id) : error
+  }
+
+  note right of GererTrajet
+    Réservé au conducteur du trajet (ErrTrajetNonProprietaire)
+    Trajet terminé : refus (ErrTrajetDejaTermine)
+    Suppression logique : réservations annulées
+    dans la même transaction (ADR 0004)
+  end note
+
+  class DetailTrajet {
+    Trajet : Trajet
+    Profil : *Profil
+    Note : *float64
+  }
+
+  note right of DetailTrajet
+    Profil nil : conducteur sans profil (UC8 facultatif)
+    Note nil : aucune évaluation reçue (UC6)
+  end note
+
+  class ConsulterTrajet {
+    trajets : TrajetRepository
+    profils : ProfilRepository
+    evaluations : EvaluationRepository
+    Executer(ctx, identifiant) : (DetailTrajet, error)
+  }
+
+  class EvaluerParticipant {
+    trajets : TrajetRepository
+    reservations : ReservationRepository
+    evaluations : EvaluationRepository
+    Executer(ctx, evaluateur, trajetID, cible, note, commentaire) : (Evaluation, error)
+  }
+
+  note right of EvaluerParticipant
+    Trajet COMPLETED requis (ErrTrajetNonTermine)
+    Les deux parties doivent avoir une réservation
+    Ligne annulée acceptée : participation antérieure
   end note
 }
 
@@ -198,6 +316,8 @@ package "internal/infrastructure/sqlite" {
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
     Terminer(ctx, identifiant, conducteur) : (Trajet, error)
+    Modifier(ctx, Trajet, conducteur) : (Trajet, error)
+    Supprimer(ctx, identifiant, conducteur) : error
   }
 
   class "ReservationRepository\n(adaptateur SQLite)" as SqliteReservationRepository {
@@ -207,8 +327,15 @@ package "internal/infrastructure/sqlite" {
     Annuler(ctx, identifiant, passager, maintenant) : (Reservation, error)
   }
 
+  class "EvaluationRepository\n(adaptateur SQLite)" as SqliteEvaluationRepository {
+    db : *sql.DB
+    Enregistrer(ctx, Evaluation) : (Evaluation, error)
+    Moyenne(ctx, identifiant) : (float64, int, error)
+  }
+
   note right of SqliteReservationRepository
     BEGIN IMMEDIATE
+    UPDATE rides.seats_available -= 1 (réservation)
     UPDATE bookings.status = CANCELLED
     UPDATE rides.seats_available += 1
     COMMIT atomique
@@ -229,7 +356,8 @@ package "internal/infrastructure/sqlite" {
     PRAGMA journal_mode = WAL
     PRAGMA busy_timeout = 5000
     PRAGMA foreign_keys = ON
-    tables users et rides (CREATE TABLE IF NOT EXISTS)
+    tables users, rides, bookings et ratings
+    (CREATE TABLE IF NOT EXISTS)
   end note
 }
 
@@ -247,7 +375,11 @@ package "internal/infrastructure/photos" {
 
 package "internal/infrastructure/notifications" {
   class Journal {
+    NotifierReservation(ctx, Reservation) : error
+    NotifierAnnulation(ctx, Reservation) : error
     NotifierFinTrajet(ctx, Trajet) : error
+    NotifierModificationTrajet(ctx, Trajet) : error
+    NotifierSuppressionTrajet(ctx, Trajet) : error
   }
 }
 
@@ -258,10 +390,14 @@ package "internal/api" {
     GET /profile
     PUT /profile
     GET /rides
+    GET /rides/{id}
     POST /rides
     POST /rides/{id}/bookings
     POST /rides/{id}/complete
+    PUT /rides/{id}
+    DELETE /rides/{id}
     DELETE /bookings/{id}
+    POST /rides/{id}/ratings
   }
 
   class identite <<fonction>> {
@@ -276,15 +412,6 @@ package "internal/api" {
     En-tête X-User obligatoire
     vide ou absent : ErrIdentiteManquante (401)
   end note
-}
-
-package "internal/infrastructure/notifications" {
-  class Journal {
-    NotifierFinTrajet(ctx, Trajet) : error
-    NotifierModificationTrajet(ctx, Trajet) : error
-    NotifierSuppressionTrajet(ctx, Trajet) : error
-    NotifierAnnulation(ctx, Reservation) : error
-  }
 }
 
 package "cmd/wasalni" {
@@ -303,6 +430,8 @@ package "cmd/wasalni" {
 
 Profil --> Sexe
 Trajet --> StatutTrajet
+Reservation --> StatutReservation
+
 GererProfil ..> ProfilRepository : utilise le port
 GererProfil ..> NormaliseurPhoto : utilise le port
 GererProfil ..> SaisieProfil : reçoit
@@ -311,50 +440,88 @@ PublierTrajet ..> TrajetRepository : utilise le port
 PublierTrajet ..> Horloge : utilise le port
 PublierTrajet ..> SaisieTrajet : reçoit
 PublierTrajet ..> Trajet : valide puis publie
-TerminerTrajet ..> TrajetFinRepository : termine le trajet
-TerminerTrajet ..> NotificateurFinTrajet : journalise au mieux
-TerminerTrajet ..> Trajet : valide propriétaire et état
+RechercherTrajets ..> TrajetRepository : utilise le port
+RechercherTrajets ..> CriteresRecherche : reçoit
+RechercherTrajets ..> Trajet : rend la liste filtrée
+ReserverPlace ..> TrajetRepository : contrôle la place
+ReserverPlace ..> ReservationRepository : écrit atomiquement
+ReserverPlace ..> Notificateur : notifie au mieux
+ReserverPlace ..> Reservation : valide
 AnnulerReservation ..> ReservationRepository : annule atomiquement
 AnnulerReservation ..> Horloge : lit maintenant
 AnnulerReservation ..> NotificateurAnnulation : notifie au mieux
 AnnulerReservation ..> Reservation : valide l'annulation
+TerminerTrajet ..> TrajetFinRepository : termine le trajet
+TerminerTrajet ..> NotificateurFinTrajet : journalise au mieux
+TerminerTrajet ..> Trajet : valide propriétaire et état
+GererTrajet ..> TrajetGestionRepository : modifie ou supprime
+GererTrajet ..> TrajetRepository : relit le trajet
+GererTrajet ..> Horloge : valide le nouveau départ
+GererTrajet ..> NotificateurGestionTrajet : journalise au mieux
+GererTrajet ..> SaisieTrajet : reçoit
+GererTrajet ..> Trajet : valide propriétaire et état
+ConsulterTrajet ..> TrajetRepository : lit le trajet
+ConsulterTrajet ..> ProfilRepository : lit le conducteur
+ConsulterTrajet ..> EvaluationRepository : lit la moyenne
+ConsulterTrajet ..> DetailTrajet : compose
+EvaluerParticipant ..> TrajetRepository : vérifie l'état
+EvaluerParticipant ..> ReservationRepository : vérifie la participation
+EvaluerParticipant ..> EvaluationRepository : écrit la note
+EvaluerParticipant ..> Evaluation : valide
 
 ProfilRepository <|.. SqliteProfilRepository
 TrajetRepository <|.. SqliteTrajetRepository
 TrajetFinRepository <|.. SqliteTrajetRepository
+TrajetGestionRepository <|.. SqliteTrajetRepository
 ReservationRepository <|.. SqliteReservationRepository
-NotificateurFinTrajet <|.. Journal
+EvaluationRepository <|.. SqliteEvaluationRepository
 NormaliseurPhoto <|.. normaliseurPhoto
 Horloge <|.. horlogeReelle
+Notificateur <|.. Journal
 NotificateurAnnulation <|.. Journal
+NotificateurFinTrajet <|.. Journal
+NotificateurGestionTrajet <|.. Journal
 
 SqliteProfilRepository ..> Ouverture : base ouverte
 SqliteProfilRepository ..> Profil : convertit chaque ligne
 SqliteProfilRepository ..> Erreurs : ErrProfilIntrouvable
 SqliteTrajetRepository ..> Ouverture : base ouverte
 SqliteTrajetRepository ..> Trajet : convertit chaque ligne
-SqliteTrajetRepository ..> Erreurs : ErrTrajetIntrouvable
+SqliteTrajetRepository ..> Erreurs : ErrTrajetIntrouvable, ErrPlacesInsuffisantes
 SqliteReservationRepository ..> Reservation : lit et change l'état
+SqliteReservationRepository ..> Erreurs : ErrReservationIntrouvable
+SqliteEvaluationRepository ..> Evaluation : convertit chaque ligne
 normaliseurPhoto ..> Normaliser : délègue
 horlogeReelle ..> Horloge : fournit l'heure UTC
-Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde
+Normaliser ..> Erreurs : ErrImageIllisible, ErrImageTropLourde, ErrImageTropGrande
 
 Routes --> GererProfil : appelle
 Routes --> PublierTrajet : appelle
-Routes --> TerminerTrajet : appelle
+Routes --> RechercherTrajets : appelle
+Routes --> ConsulterTrajet : appelle
+Routes --> ReserverPlace : appelle
 Routes --> AnnulerReservation : appelle
+Routes --> TerminerTrajet : appelle
+Routes --> GererTrajet : appelle
+Routes --> EvaluerParticipant : appelle
 Routes ..> identite : lit X-User
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
 
 Racine --> SqliteProfilRepository : instancie
-Racine --> SqliteTrajetRepository : instancie une fois,\npartagé par UC1, UC2 et UC3
+Racine --> SqliteTrajetRepository : instancie une fois,\npartagé par UC1, UC2, UC3, UC7, UC9 et UC11
+Racine --> SqliteReservationRepository : instancie
+Racine --> SqliteEvaluationRepository : instancie
 Racine --> normaliseurPhoto : instancie
 Racine --> horlogeReelle : instancie
-Racine --> SqliteReservationRepository : instancie
 Racine --> GererProfil : câble
 Racine --> PublierTrajet : câble
-Racine --> TerminerTrajet : câble
+Racine --> RechercherTrajets : câble
+Racine --> ConsulterTrajet : câble
+Racine --> ReserverPlace : câble
 Racine --> AnnulerReservation : câble
+Racine --> TerminerTrajet : câble
+Racine --> GererTrajet : câble
+Racine --> EvaluerParticipant : câble
 Racine --> Routes : monte le routeur
 @enduml
