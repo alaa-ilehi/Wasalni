@@ -12,7 +12,7 @@ Le conducteur doit être propriétaire du trajet. Un trajet inconnu ou supprimé
 La suppression garde la ligne `rides` et les lignes `bookings` pour préserver les clés étrangères et l'historique
 (ADR 0012). Elle pose `deleted_at` et annule les réservations actives dans une transaction. L'insertion de nouvelles réservations est conditionnée à un trajet publié et non supprimé.
 
-Les notifications de modification/suppression sont journalisées après commit au mieux. Leur livraison effective est externe et relève d'UC12 (ADR 0007).
+Les notifications de modification/suppression partent après commit, au mieux : `POST` JSON vers le notificateur configuré, journal sinon (ADR 0007, ADR 0013).
 
 ## Séquence nominale
 

@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/alaa-ilehi/wasalni/internal/application"
@@ -41,6 +42,10 @@ func (n *normaliseurFaux) Normaliser(photo string) (string, error) {
 	n.appels++
 	if photo == "corrompue" {
 		return "", errors.New("image illisible")
+	}
+	if photo == "trop-grande" {
+		// Même forme que l'adaptateur de cmd/wasalni : photos.ErrImageTropGrande traduite en erreur d'application.
+		return "", fmt.Errorf("%w : 30000 x 30000 pixels", application.ErrImageTropGrande)
 	}
 	return "png-normalisé", nil
 }
@@ -141,5 +146,20 @@ func TestConsulterProfilInconnu(t *testing.T) {
 	gerer, _, _ := nouveauCas(t)
 	if _, err := gerer.Consulter(context.Background(), "inconnu"); !errors.Is(err, domain.ErrProfilIntrouvable) {
 		t.Fatalf("erreur = %v, attendu ErrProfilIntrouvable", err)
+	}
+}
+
+// TestUnePhotoTropGrandeGardeSonErreurPropre : l'API répond 400 dans les deux cas, mais ErrImageTropGrande reste
+// reconnaissable derrière l'emballage ErrPhotoInvalide (deux %w).
+func TestUnePhotoTropGrandeGardeSonErreurPropre(t *testing.T) {
+	gerer, _, _ := nouveauCas(t)
+	_, _, err := gerer.Enregistrer(context.Background(), "alice", application.SaisieProfil{
+		Nom: "Alice", Age: 30, Photo: texte("trop-grande"),
+	})
+	if !errors.Is(err, application.ErrImageTropGrande) {
+		t.Fatalf("erreur = %v, attendu ErrImageTropGrande", err)
+	}
+	if !errors.Is(err, application.ErrPhotoInvalide) {
+		t.Fatalf("erreur = %v, attendu aussi ErrPhotoInvalide (400)", err)
 	}
 }

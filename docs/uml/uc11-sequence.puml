@@ -39,8 +39,9 @@ else identité présente
     Trajets --> UC : Trajet COMPLETED
     UC -> Notif : NotifierFinTrajet(...)
     note right of UC
-      Événement journalisé au mieux après commit.
-      La livraison aux passagers relève d'UC12.
+      Événement livré au mieux après commit :
+      POST JSON si WASALNI_NOTIFICATION_URL est définie,
+      journal sinon (ADR 0013).
     end note
     UC --> API : Trajet COMPLETED
     API --> Conducteur : 200 + trajet

@@ -43,8 +43,9 @@ else identité présente
     Reservations --> UC : Reservation CANCELLED
     UC -> Notif : NotifierAnnulation(...)
     note right of UC
-      L'événement est journalisé au mieux.
-      La livraison externe UC12 reste à faire.
+      L'événement part au mieux après commit :
+      POST JSON si WASALNI_NOTIFICATION_URL est définie,
+      journal sinon (ADR 0013).
     end note
     UC --> API : Reservation CANCELLED
     API --> Passager : 204 No Content

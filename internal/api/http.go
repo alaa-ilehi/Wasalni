@@ -45,6 +45,7 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrTrajetInvalide),
 		errors.Is(err, domain.ErrConducteurNePeutPasReserver),
 		errors.Is(err, application.ErrPhotoInvalide),
+		errors.Is(err, application.ErrImageTropGrande),
 		errors.Is(err, application.ErrRechercheInvalide),
 		errors.Is(err, domain.ErrCurseurInvalide),
 		errors.Is(err, domain.ErrEvaluationInvalide):

@@ -6,7 +6,7 @@
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
 **État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC5 (annuler), UC6
 (évaluer), UC9 (modifier/supprimer), UC10 (mes trajets et réservations), UC11 (terminer un trajet) et UC13 (s'authentifier)
-sont livrés ; UC12 reste partiel (journal au lieu d'un système de notification).
+sont livrés ; UC12 livre ses notifications par `POST` JSON vers `WASALNI_NOTIFICATION_URL`, avec le journal en repli.
 UC3 consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans surréservation possible
 (ADR 0004) ; `bookings.ride_id` référence `rides(id)`. UC6 enregistre une note par couple sur un trajet terminé et alimente
 `driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. UC13 remplace l'en-tête de

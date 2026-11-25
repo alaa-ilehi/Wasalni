@@ -13,7 +13,8 @@ Séquence : [uml/uc5-sequence.puml](uml/uc5-sequence.puml). Modèle de classes :
 3. Le dépôt vérifie propriété, état et échéance `now < departure - X` dans une transaction immédiate.
 4. Dans cette transaction, le dépôt passe la réservation à `CANCELLED`, incrémente `seats_available` une seule fois et valide les deux écritures ensemble.
 5. Après validation, le cas d'utilisation journalise l'événement au mieux et répond `204 No Content`. La livraison aux
-   deux parties dépend de l'adaptateur externe UC12, non présent dans cette implémentation.
+   deux parties passe par l'adaptateur de notification : `POST` JSON si `WASALNI_NOTIFICATION_URL` est définie, journal
+   sinon (ADR 0013).
 
 ## Scénarios alternatifs
 

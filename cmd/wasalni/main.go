@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -132,7 +133,13 @@ func (horlogeReelle) Maintenant() time.Time { return time.Now().UTC() }
 type normaliseurPhoto struct{}
 
 func (normaliseurPhoto) Normaliser(photoBase64 string) (string, error) {
-	return photos.Normaliser(photoBase64)
+	normalisee, err := photos.Normaliser(photoBase64)
+	// Le budget de pixels (ADR 0008) remonte sous une erreur d'application, sans que la couche applicative connaisse
+	// le paquet photos.
+	if errors.Is(err, photos.ErrImageTropGrande) {
+		return "", fmt.Errorf("%w : %v", application.ErrImageTropGrande, err)
+	}
+	return normalisee, err
 }
 
 func valeurEnv(cle, defaut string) string {
