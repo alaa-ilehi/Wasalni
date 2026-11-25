@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/alaa-ilehi/wasalni/internal/application"
 	"github.com/alaa-ilehi/wasalni/internal/domain"
@@ -84,6 +85,10 @@ func (r *reservationsFausses) ParPassager(_ context.Context, passager string) ([
 		}
 	}
 	return resultat, nil
+}
+
+func (r *reservationsFausses) Annuler(_ context.Context, _ string, _ string, _ time.Time) (domain.Reservation, error) {
+	return domain.Reservation{}, errors.New("annulation non configurée dans ce test")
 }
 
 // notificateurFaux : trace les appels et peut échouer.

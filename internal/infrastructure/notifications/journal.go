@@ -28,3 +28,11 @@ func (j *Journal) NotifierReservation(_ context.Context, reservation domain.Rese
 		"passager", reservation.Passager)
 	return nil
 }
+
+func (j *Journal) NotifierAnnulation(_ context.Context, reservation domain.Reservation) error {
+	j.journal.Info("réservation annulée par le passager",
+		"reservation", reservation.Identifiant,
+		"trajet", reservation.Trajet,
+		"passager", reservation.Passager)
+	return nil
+}

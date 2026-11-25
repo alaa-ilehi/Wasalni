@@ -18,6 +18,9 @@ var (
 	ErrTrajetIntrouvable           = errors.New("trajet introuvable")
 	ErrTrajetComplet               = errors.New("plus aucune place disponible sur ce trajet")
 	ErrReservationDejaActive       = errors.New("une réservation active existe déjà pour ce trajet")
+	ErrReservationIntrouvable      = errors.New("réservation introuvable")
+	ErrReservationDejaAnnulee      = errors.New("la réservation est déjà annulée")
+	ErrAnnulationHorsDelai         = errors.New("le délai d'annulation est dépassé")
 	ErrConducteurNePeutPasReserver = errors.New("le conducteur ne peut pas réserver sa propre place")
 	ErrTrajetInvalide              = errors.New("trajet invalide")
 )
@@ -40,6 +43,21 @@ func (r Reservation) Valider() error {
 	case ReservationActive, ReservationAnnulee:
 	default:
 		return ErrTrajetInvalide
+	}
+	return nil
+}
+
+// ValiderAnnulation applique les règles de UC5. Une réservation d'un autre passager
+// est volontairement indistinguable d'une réservation inconnue.
+func (r Reservation) ValiderAnnulation(passager string, trajet Trajet, maintenant time.Time) error {
+	if r.Identifiant == "" || r.Passager != passager || r.Trajet != trajet.Identifiant {
+		return ErrReservationIntrouvable
+	}
+	if r.Statut != ReservationActive {
+		return ErrReservationDejaAnnulee
+	}
+	if !maintenant.Before(trajet.Depart.Add(-trajet.DelaiAnnulation)) {
+		return ErrAnnulationHorsDelai
 	}
 	return nil
 }

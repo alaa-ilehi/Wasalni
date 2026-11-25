@@ -83,6 +83,104 @@ RETURNING created_at`
 	return reservation, nil
 }
 
+// Annuler change l'état et rend la place dans une transaction immédiate. Le verrou d'écriture
+// sérialise les annulations concurrentes ; le statut ACTIVE fait office de compare-and-swap.
+func (r *ReservationRepository) Annuler(
+	ctx context.Context,
+	identifiant, passager string,
+	maintenant time.Time,
+) (domain.Reservation, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("début de transaction : %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		reservation            domain.Reservation
+		statut, depart, creeLe string
+		delaiHeures            float64
+	)
+	const lire = `
+SELECT b.id, b.ride_id, b.passenger, b.status, b.created_at,
+       r.departure, r.cancel_delay_hours
+FROM bookings AS b
+JOIN rides AS r ON r.id = b.ride_id
+WHERE b.id = ? AND b.passenger = ?`
+	err = tx.QueryRowContext(ctx, lire, identifiant, passager).Scan(
+		&reservation.Identifiant, &reservation.Trajet, &reservation.Passager, &statut,
+		&creeLe, &depart, &delaiHeures,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		var statutExistant string
+		errStatut := tx.QueryRowContext(ctx,
+			`SELECT status FROM bookings WHERE id = ? AND passenger = ?`, identifiant, passager,
+		).Scan(&statutExistant)
+		if errors.Is(errStatut, sql.ErrNoRows) {
+			return domain.Reservation{}, domain.ErrReservationIntrouvable
+		}
+		if errStatut != nil {
+			return domain.Reservation{}, fmt.Errorf("lecture du statut de réservation : %w", errStatut)
+		}
+		if domain.StatutReservation(statutExistant) == domain.ReservationAnnulee {
+			return domain.Reservation{}, domain.ErrReservationDejaAnnulee
+		}
+		return domain.Reservation{}, fmt.Errorf("lecture du trajet de la réservation %s : %w", identifiant, err)
+	}
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("lecture de la réservation : %w", err)
+	}
+
+	reservation.Statut = domain.StatutReservation(statut)
+	if reservation.CreeLe, err = time.Parse(time.RFC3339, creeLe); err != nil {
+		return domain.Reservation{}, fmt.Errorf("horodatage de création illisible %q : %w", creeLe, err)
+	}
+	trajet := domain.Trajet{Identifiant: reservation.Trajet}
+	if trajet.Depart, err = time.Parse(time.RFC3339, depart); err != nil {
+		return domain.Reservation{}, fmt.Errorf("départ illisible %q : %w", depart, err)
+	}
+	trajet.DelaiAnnulation = time.Duration(delaiHeures * float64(time.Hour))
+	if err := reservation.ValiderAnnulation(passager, trajet, maintenant); err != nil {
+		return domain.Reservation{}, err
+	}
+
+	resultat, err := tx.ExecContext(ctx,
+		`UPDATE bookings SET status = 'CANCELLED' WHERE id = ? AND passenger = ? AND status = 'ACTIVE'`,
+		identifiant, passager,
+	)
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("annulation de la réservation : %w", err)
+	}
+	modifiees, err := resultat.RowsAffected()
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("vérification de l'annulation : %w", err)
+	}
+	if modifiees != 1 {
+		return domain.Reservation{}, domain.ErrReservationDejaAnnulee
+	}
+
+	resultat, err = tx.ExecContext(ctx,
+		`UPDATE rides SET seats_available = seats_available + 1 WHERE id = ? AND seats_available < seats_total`,
+		reservation.Trajet,
+	)
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("libération de la place : %w", err)
+	}
+	modifiees, err = resultat.RowsAffected()
+	if err != nil {
+		return domain.Reservation{}, fmt.Errorf("vérification de la place libérée : %w", err)
+	}
+	if modifiees != 1 {
+		return domain.Reservation{}, fmt.Errorf("libération de la place : %w", domain.ErrTrajetInvalide)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Reservation{}, fmt.Errorf("validation de la transaction : %w", err)
+	}
+
+	reservation.Statut = domain.ReservationAnnulee
+	return reservation, nil
+}
+
 // ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne (ADR 0003 :
 // les deux états sont rendus, l'appelant décide de ce qu'il affiche).
 func (r *ReservationRepository) ParPassager(ctx context.Context, passager string) ([]domain.Reservation, error) {
