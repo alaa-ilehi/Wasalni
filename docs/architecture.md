@@ -236,8 +236,8 @@ Source : [uml/uc5-sequence.puml](uml/uc5-sequence.puml) et fiche [UC5](uc5-cance
 
 `PUT /rides/{id}` et `DELETE /rides/{id}` vérifient l'identité, la propriété et l'état du trajet. Une modification
 recompte les réservations actives avant de fixer les places disponibles ; une suppression annule ces réservations et
-pose `deleted_at` dans la même transaction (ADR 0012). Les deux événements sont journalisés au mieux après le commit,
-la livraison relevant d'UC12 (ADR 0007).
+pose `deleted_at` dans la même transaction (ADR 0012). Les deux événements partent au mieux après le commit, livrés par
+le notificateur — webhook si `WASALNI_NOTIFICATION_URL` est définie, journal sinon (ADR 0007, ADR 0013).
 
 ![Séquence UC9](uml/uc9-sequence.png)
 
