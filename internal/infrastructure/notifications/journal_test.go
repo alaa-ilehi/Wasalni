@@ -18,6 +18,11 @@ var (
 	_ application.NotificateurAnnulation    = (*notifications.Journal)(nil)
 	_ application.NotificateurGestionTrajet = (*notifications.Journal)(nil)
 	_ application.NotificateurFinTrajet     = (*notifications.Journal)(nil)
+
+	_ application.Notificateur              = (*notifications.Webhook)(nil)
+	_ application.NotificateurAnnulation    = (*notifications.Webhook)(nil)
+	_ application.NotificateurGestionTrajet = (*notifications.Webhook)(nil)
+	_ application.NotificateurFinTrajet     = (*notifications.Webhook)(nil)
 )
 
 // journalDeTest : un journal bavard dans un tampon, pour relire ce qui a été inscrit.

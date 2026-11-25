@@ -26,6 +26,7 @@ Le binaire se configure par deux variables d'environnement, doublées chacune d'
 |---|---|---|---|
 | `WASALNI_ADDR` | `-addr` | `:8080` | adresse d'écoute HTTP |
 | `WASALNI_DB` | `-db` | `wasalni.db` | chemin du fichier SQLite (créé et migré au démarrage) |
+| `WASALNI_NOTIFICATION_URL` | — | vide | destinataire des événements UC12 ; vide = journal seulement (ADR 0013) |
 
 Aucun service externe n'est requis : la base est un fichier unique, les photos vivent dedans, et les mots de passe sont
 hachés par la bibliothèque standard. Le binaire se compile sans cgo : `CGO_ENABLED=0 go build ./cmd/wasalni`.
@@ -39,6 +40,14 @@ curl -s 127.0.0.1:8080/health                          # {"statut":"ok"} : la ba
 
 Une base ordinaire se crée toute seule : `sqlite3 wasalni.db '.tables'` doit lister `bookings`, `credentials`, `ratings`,
 `rides`, `sessions` et `users`.
+
+Les notifications partent en `POST` JSON vers `WASALNI_NOTIFICATION_URL` quand elle est définie, sinon elles restent dans
+le journal du service. N'importe quel récepteur convient (`ntfy`, `Gotify`, un relais vers Slack, un serveur maison) :
+
+```bash
+WASALNI_NOTIFICATION_URL=http://127.0.0.1:9000/hook ./wasalni
+# réserve une place : POST /hook {"event":"reservation_accepted","reservation":"…","ride":"…","passenger":"…"}
+```
 
 ```bash
 go run ./cmd/wasalni                                   # écoute sur :8080, base wasalni.db

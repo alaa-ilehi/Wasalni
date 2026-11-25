@@ -71,11 +71,12 @@ package "internal/infrastructure/photos" {
 }
 
 package "internal/infrastructure/notifications" {
-  [Journal\nréservation, annulation,\nfin, modification, suppression] as Journal
+  [Webhook\nPOST JSON, 5 s, sans réessai] as Webhook
+  [Journal\nrepli sans URL] as Journal
 }
 
 database "SQLite\n(tables users, rides, bookings, ratings,\ncredentials, sessions)" as DB
-cloud "Système de notification\n(externe, non branché)" as ExternalNotif
+cloud "Système de notification\n(UC12, WASALNI_NOTIFICATION_URL)" as ExternalNotif
 
 Client --> Routes : HTTP + Authorization: Bearer
 
@@ -141,6 +142,10 @@ IGestion <|.. SqlTrajet
 IReservation <|.. SqlReservation
 IEvaluation <|.. SqlEvaluation
 INormaliseur <|.. Photos
+INotificateur <|.. Webhook
+INotifAnnulation <|.. Webhook
+INotifGestion <|.. Webhook
+INotifFin <|.. Webhook
 INotificateur <|.. Journal
 INotifAnnulation <|.. Journal
 INotifGestion <|.. Journal
@@ -162,7 +167,8 @@ Main --> Authentification : instancie
 Main --> MesElements : instancie
 SqlProfil ..> Ouverture : base ouverte et schéma appliqué
 
-Journal ..> ExternalNotif : appel prévu (UC12)
+Webhook --> ExternalNotif : POST JSON après commit
+Journal ..> Webhook : remplacé quand l'URL est configurée
 
 Main --> SqlProfil : instancie
 Main --> SqlTrajet : instancie une fois,\npartagé par UC1, UC2, UC3, UC7, UC9 et UC11
