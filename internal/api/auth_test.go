@@ -180,8 +180,8 @@ func TestToutesLesRoutesProtegeesRefusentSansJeton(t *testing.T) {
 	}
 	for _, route := range routes {
 		t.Run(route.methode+" "+route.chemin, func(t *testing.T) {
-			// Les routes publiques de lecture (recherche, détail d'un trajet) sont exclues : sans
-			// identité, elles doivent déjà rendre 401 avant d'être publiques est un choix d'UC2/UC7.
+			// Toutes les routes protégées, y compris la recherche et le détail d'un trajet : la seule
+			// exception au jeton est /health et les trois routes /auth/* (ADR 0011).
 			statut, corps := banc.appel(t, route.methode, route.chemin, "", "{}")
 			if statut != http.StatusUnauthorized {
 				t.Fatalf("statut = %d, attendu 401 pour %s %s (%v)", statut, route.methode, route.chemin, corps)

@@ -296,7 +296,7 @@ type detailTrajetJSON struct {
 	Conducteur *conducteurJSON `json:"driver"`
 }
 
-// consulterTrajet : GET /rides/{id}, lecture sans identité requise (UC7, aucune précondition).
+// consulterTrajet : GET /rides/{id}, session requise mais aucun rôle particulier (UC7, aucune précondition).
 func consulterTrajet(consulter application.ConsulterTrajet, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, err := identite(r, auth); err != nil {
@@ -323,7 +323,7 @@ func consulterTrajet(consulter application.ConsulterTrajet, auth application.Aut
 	}
 }
 
-// rechercherTrajets : GET /rides, aucun identifiant requis (UC2, aucune précondition).
+// rechercherTrajets : GET /rides, session requise mais aucun identifiant transmis (UC2, aucune précondition).
 func rechercherTrajets(rechercher application.RechercherTrajets, auth application.Authentification) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// La recherche ne sert pas l'identité, mais une session est exigée : la seule exception au

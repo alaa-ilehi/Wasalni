@@ -51,7 +51,7 @@ Trois critères (énoncé) : valeur métier, risque, impact sur l'architecture. 
 | UC12 Recevoir des notifications | 2 | 1 | 1 | 4 | faible | 11 |
 | UC6 S'évaluer mutuellement | 1 | 1 | 1 | 3 | faible | 12 |
 
-**Décision :** UC3 en premier (risque de concurrence, il structure le cœur du système), puis UC1/UC2 (il faut des trajets à réserver). L'authentification et les notifications sont déléguées à des systèmes externes.
+**Décision :** UC3 en premier (risque de concurrence, il structure le cœur du système), puis UC1/UC2 (il faut des trajets à réserver). Les notifications restent déléguées à un système externe ; l'authentification est livrée par le service lui-même (UC13, ADR 0011).
 
 ## Plan : 3 itérations, 4 phases
 | Itération | Contenu | Phase | Jalon | Milestone GitHub | Tag Git |
