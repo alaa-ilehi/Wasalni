@@ -31,7 +31,9 @@ JETON=$(curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' \
 
 # 3. appeler une route protégée (toutes le sont, sauf /health et /auth/*)
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/profile
-curl -s -H "Authorization: Bearer $JETON" localhost:8080/rides
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/rides            # page de 50 trajets au plus
+curl -s -H "Authorization: Bearer $JETON" 'localhost:8080/rides?limit=2'  # puis la page suivante :
+curl -s -H "Authorization: Bearer $JETON" 'localhost:8080/rides?limit=2&after=<next_cursor>'
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/me/rides      # mes trajets (UC10)
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/me/bookings   # mes réservations (UC10)
 

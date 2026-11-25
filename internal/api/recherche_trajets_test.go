@@ -11,7 +11,14 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/api"
 )
 
-func getTrajets(t *testing.T, serveur *httptest.Server, chemin string) (int, []map[string]any, string) {
+// pageRecherche : la réponse paginée de GET /rides.
+type pageRecherche struct {
+	Trajets        []map[string]any `json:"rides"`
+	CurseurSuivant *string          `json:"next_cursor"`
+}
+
+// getPageTrajets rend le statut, la page décodée et le corps brut.
+func getPageTrajets(t *testing.T, serveur *httptest.Server, chemin string) (int, pageRecherche, string) {
 	t.Helper()
 	requete, err := http.NewRequest(http.MethodGet, serveur.URL+chemin, nil)
 	if err != nil {
@@ -27,11 +34,18 @@ func getTrajets(t *testing.T, serveur *httptest.Server, chemin string) (int, []m
 	if err != nil {
 		t.Fatalf("lecture de la réponse : %v", err)
 	}
-	var trajets []map[string]any
-	if err := json.Unmarshal(corps, &trajets); err != nil {
+	var page pageRecherche
+	if err := json.Unmarshal(corps, &page); err != nil {
 		t.Fatalf("décodage de la réponse %q : %v", corps, err)
 	}
-	return reponse.StatusCode, trajets, string(corps)
+	return reponse.StatusCode, page, string(corps)
+}
+
+// getTrajets ne s'intéresse qu'à la liste des trajets de la page.
+func getTrajets(t *testing.T, serveur *httptest.Server, chemin string) (int, []map[string]any, string) {
+	t.Helper()
+	statut, page, corps := getPageTrajets(t, serveur, chemin)
+	return statut, page.Trajets, corps
 }
 
 func TestRechercherTrajetsSansResultatRenvoieListeVide(t *testing.T) {
@@ -44,8 +58,8 @@ func TestRechercherTrajetsSansResultatRenvoieListeVide(t *testing.T) {
 	if trajets == nil || len(trajets) != 0 {
 		t.Errorf("trajets = %v, attendu une liste vide (corps %s)", trajets, corps)
 	}
-	if strings.TrimSpace(corps) != "[]" {
-		t.Errorf("corps = %q, attendu []", corps)
+	if !strings.Contains(corps, `"rides":[]`) {
+		t.Errorf("corps = %q, attendu une liste de trajets vide", corps)
 	}
 }
 

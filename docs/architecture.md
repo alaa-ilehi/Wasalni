@@ -145,7 +145,7 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `DELETE` | `/auth/session` | `Authorization: Bearer` requis | — | `204` session fermée, `401` session absente ou inconnue, `500` erreur inattendue |
 | `GET` | `/profile` | `Authorization: Bearer` requis | — | `200` profil, `401` session absente, `404` profil introuvable, `500` erreur inattendue |
 | `PUT` | `/profile` | `Authorization: Bearer` requis | `{name, age, sex?, photo?}` | `201` création, `200` mise à jour, `400` saisie ou image refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
-| `GET` | `/rides` | `Authorization: Bearer` requis | — (`origin`, `destination`, `date` en query) | `200` liste triée par départ, `400` date invalide, `401` session absente, `500` erreur inattendue |
+| `GET` | `/rides` | `Authorization: Bearer` requis | — (`origin`, `destination`, `date`, `limit`, `after` en query) | `200` `{rides, next_cursor}` trié par départ (page de 50 au plus, `next_cursor` nul sur la dernière), `400` date, limite ou curseur invalides, `401` session absente, `500` erreur inattendue |
 | `GET` | `/rides/{id}` | `Authorization: Bearer` requis | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `401` session absente, `404` trajet inconnu ou terminé, `500` erreur inattendue |
 | `POST` | `/rides` | `Authorization: Bearer` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` session absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `Authorization: Bearer` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` session absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
@@ -312,6 +312,23 @@ Invariants portés par le schéma ou par le domaine :
 - `bookings.status` est contraint à `ACTIVE` ou `CANCELLED` (ADR 0003) ; l'index partiel `bookings_active_unique`
   interdit deux réservations `ACTIVE` pour le même couple (trajet, passager), y compris sous appels simultanés.
 - `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` ; UC11 effectue la transition irréversible.
+- Deux index partiels servent les deux lectures publiques de `rides` :
+
+  ```sql
+  CREATE INDEX IF NOT EXISTS rides_search ON rides (status, departure, id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS rides_driver ON rides (driver, departure, id) WHERE deleted_at IS NULL;
+  ```
+
+  Ils sont partiels parce que toutes les lectures filtrent déjà `deleted_at IS NULL` : l'index ne contient que les
+  trajets lisibles, et `id` termine la clé pour que le tri `departure ASC, id ASC` et le curseur de pagination soient
+  couverts par le même parcours. Un test exécute `EXPLAIN QUERY PLAN` sur les deux requêtes et échoue si le plan
+  contient `SCAN rides`. Une base créée avant la colonne `status` n'est pas indexée : elle ne peut de toute façon pas
+  servir la recherche, et rien n'y serait perdu à la reconstruire.
+- La recherche UC2 est paginée par **keyset**, pas par décalage : le curseur porte le couple `(departure, id)` de la
+  dernière ligne rendue, la requête demande `LIMIT limite + 1` et la ligne supplémentaire dit s'il reste une page. Une
+  insertion entre deux pages ne duplique donc aucun trajet déjà rendu, et aucun comptage total n'est nécessaire.
+  Le curseur est encodé en base64url de `<départ RFC 3339>|<identifiant>` par l'adaptateur : le domaine ne connaît que
+  la chaîne opaque, et un curseur illisible rend `domain.ErrCurseurInvalide`, donc un `400`.
 - `rides.seats_available` démarre à `seats_total` et décroît d'une unité par réservation : `UPDATE ... WHERE
   seats_available > 0` qui ne modifie aucune ligne vaut `domain.ErrTrajetComplet` et annule la transaction (ADR 0004).
   Il remonte d'une unité par annulation (UC5) et, à la suppression d'un trajet (UC9), du nombre de réservations
@@ -454,6 +471,11 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
 - **Tests d'UC11** : domaine — propriétaire et état ; application — identité requise et notification au mieux ; SQLite —
   propriétaire, identifiant inconnu, transition unique et appels concurrents ; HTTP/SQLite — `200`, `401`, `403`, `404`,
   `409`, état persisté et échec de notification sans annulation.
+- **Tests d'index et de pagination** : `index_test.go` explique les deux requêtes publiques (`EXPLAIN QUERY PLAN`) et
+  refuse `SCAN rides`, puis vérifie que les index survivent à une reapplication du schéma ; `recherche_paginee_test.go`
+  parcourt trois pages sans doublon ni perte, insère des trajets entre deux pages et refuse quatre curseurs illisibles ;
+  `internal/api/recherche_paginee_test.go` couvre les bornes de `limit` (`1` et `200` acceptés, `0`, `201`, `abc` et
+  `-5` refusés), le parcours par curseur et le `400` d'un `after` abîmé.
 - **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 1 min 40 s sur `main` : la compilation instrumentée (~50 s) et les tests `photos` (~20 s, encodage WebP sans perte sous `-race`) en font l'essentiel.
 
 ## 13. Lancer le service

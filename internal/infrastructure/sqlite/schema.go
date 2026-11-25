@@ -96,6 +96,14 @@ CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
 `
 
 // AppliquerSchema crée les tables manquantes. Rejouable sur une base existante.
+// schemaIndexTrajets : index partiels de la recherche UC2 et de UC10. Toutes les lectures publiques
+// filtrent déjà deleted_at IS NULL, l'index ne contient donc que les trajets lisibles ; id termine la
+// clé pour couvrir le tri et le curseur de pagination.
+const schemaIndexTrajets = `
+CREATE INDEX IF NOT EXISTS rides_search ON rides (status, departure, id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS rides_driver ON rides (driver, departure, id) WHERE deleted_at IS NULL;
+`
+
 func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 	for _, table := range []struct{ nom, ddl string }{
 		{"users", schemaProfil},
@@ -109,6 +117,9 @@ func AppliquerSchema(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	if err := ajouterColonneSupprime(ctx, db); err != nil {
+		return err
+	}
+	if err := indexerTrajets(ctx, db); err != nil {
 		return err
 	}
 
@@ -147,6 +158,37 @@ func ajouterColonneSupprime(ctx context.Context, db *sql.DB) error {
 	}
 	if _, err := db.ExecContext(ctx, "ALTER TABLE rides ADD COLUMN deleted_at TEXT"); err != nil {
 		return fmt.Errorf("ajout de rides.deleted_at : %w", err)
+	}
+	return nil
+}
+
+// indexerTrajets crée les index de lecture. Une base créée avant la colonne status garde sa table
+// telle quelle : elle n'a pas de recherche à indexer, et rien ne serait perdu à la recréer.
+// shortcut: pas d'index sur une base antérieure à status, à revoir si une telle base doit vivre.
+func indexerTrajets(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(rides)")
+	if err != nil {
+		return fmt.Errorf("inspection du schéma rides : %w", err)
+	}
+	defer rows.Close()
+	colonnes := map[string]bool{}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var def any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
+			return err
+		}
+		colonnes[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !colonnes["status"] || !colonnes["departure"] || !colonnes["driver"] {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, schemaIndexTrajets); err != nil {
+		return fmt.Errorf("création des index de rides : %w", err)
 	}
 	return nil
 }

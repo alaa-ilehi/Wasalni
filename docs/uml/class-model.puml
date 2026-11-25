@@ -40,6 +40,13 @@ package "internal/domain" {
     Origine : string
     Destination : string
     Date : string
+    Limite : int
+    Apres : string
+  }
+
+  class PageTrajets {
+    Trajets : []Trajet
+    CurseurSuivant : string
   }
 
   class Trajet {
@@ -63,7 +70,7 @@ package "internal/domain" {
   interface TrajetRepository {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
-    Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+    Rechercher(ctx, CriteresRecherche) : (PageTrajets, error)
     ParConducteur(ctx, conducteur) : ([]Trajet, error)
   }
 
@@ -247,13 +254,15 @@ package "internal/application" {
 
   class RechercherTrajets {
     trajets : TrajetRepository
-    Executer(ctx, CriteresRecherche) : ([]Trajet, error)
+    Executer(ctx, CriteresRecherche) : (PageTrajets, error)
   }
 
   note right of RechercherTrajets
-    Critères vides acceptés (liste complète)
+    Critères vides acceptés (filtres et limite par défaut)
     Date au format AAAA-MM-JJ ; invalide : ErrRechercheInvalide (400)
-    Seuls les trajets PUBLISHED sont rendus, triés par départ
+    Limite bornée à 200 ; curseur illisible : ErrCurseurInvalide (400)
+    Seuls les trajets PUBLISHED sont rendus, triés par départ puis identifiant
+    Page de 50 trajets au plus ; CurseurSuivant vide sur la dernière page
   end note
 
   interface Notificateur {
@@ -392,7 +401,7 @@ package "internal/infrastructure/sqlite" {
     db : *sql.DB
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
-    Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+    Rechercher(ctx, CriteresRecherche) : (PageTrajets, error)
     Terminer(ctx, identifiant, conducteur) : (Trajet, error)
     Modifier(ctx, Trajet, conducteur) : (Trajet, error)
     Supprimer(ctx, identifiant, conducteur) : error

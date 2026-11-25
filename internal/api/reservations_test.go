@@ -40,8 +40,8 @@ func (t trajetsEnMemoire) ParConducteur(_ context.Context, _ string) ([]domain.T
 	return nil, nil
 }
 
-func (t trajetsEnMemoire) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
-	return nil, nil
+func (t trajetsEnMemoire) Rechercher(_ context.Context, _ domain.CriteresRecherche) (domain.PageTrajets, error) {
+	return domain.PageTrajets{}, nil
 }
 
 type notificateurMuet struct{}
