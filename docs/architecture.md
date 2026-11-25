@@ -476,6 +476,10 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   parcourt trois pages sans doublon ni perte, insère des trajets entre deux pages et refuse quatre curseurs illisibles ;
   `internal/api/recherche_paginee_test.go` couvre les bornes de `limit` (`1` et `200` acceptés, `0`, `201`, `abc` et
   `-5` refusés), le parcours par curseur et le `400` d'un `after` abîmé.
+- **Tests des notifications** : `internal/infrastructure/notifications/journal_test.go` capture le journal sur un
+  `bytes.Buffer` et vérifie, pour chacune des cinq notifications, le niveau, le message et les attributs, plus le repli
+  de `NouveauJournal(nil)` ; des assertions de conformité lient `Journal` aux quatre ports, donc un port modifié casse la
+  compilation.
 - **Commandes** : `go build ./...`, `go vet ./...`, `gofmt -l .` (échec si la liste n'est pas vide) et `go test -race ./...` — c'est exactement ce que la CI exécute, dans cet ordre. Le job dure environ 1 min 40 s sur `main` : la compilation instrumentée (~50 s) et les tests `photos` (~20 s, encodage WebP sans perte sous `-race`) en font l'essentiel.
 
 ## 13. Lancer le service
