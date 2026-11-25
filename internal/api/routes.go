@@ -25,6 +25,9 @@ type Deps struct {
 	Terminaisons   application.TerminerTrajet
 	GestionTrajets application.GererTrajet
 	Evaluations    application.EvaluerParticipant
+	// MesTrajets et MesReservations : UC10, listes de l'appelant uniquement.
+	MesTrajets      application.MesTrajets
+	MesReservations application.MesReservations
 	// Authentification : UC13, seule source d'identité ; aucune route protégée ne lit un en-tête de confiance.
 	Authentification application.Authentification
 }
@@ -42,6 +45,8 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("PUT /profile", enregistrerProfil(deps.Profils, deps.Authentification))
 	mux.HandleFunc("GET /rides", rechercherTrajets(deps.Recherches, deps.Authentification))
 	mux.HandleFunc("GET /rides/{id}", consulterTrajet(deps.Details, deps.Authentification))
+	mux.HandleFunc("GET /me/rides", listerMesTrajets(deps.MesTrajets, deps.Authentification))
+	mux.HandleFunc("GET /me/bookings", listerMesReservations(deps.MesReservations, deps.Authentification))
 	mux.HandleFunc("POST /rides", publierTrajet(deps.Trajets, deps.Authentification))
 	mux.HandleFunc("POST /rides/{id}/bookings", reserverPlace(deps.Reservations, deps.Authentification))
 	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons, deps.Authentification))
@@ -380,6 +385,60 @@ func publierTrajet(publier application.PublierTrajet, auth application.Authentif
 			return
 		}
 		repondreJSON(w, http.StatusCreated, trajetVersJSON(trajet))
+	}
+}
+
+// reservationSuivieJSON : une réservation UC10 avec le trajet qu'elle concerne.
+// Trajet vaut null quand UC9 a supprimé le trajet après l'avoir annulée.
+type reservationSuivieJSON struct {
+	reservationJSON
+	Trajet *trajetJSON `json:"ride"`
+}
+
+// listerMesTrajets : GET /me/rides, les trajets que l'appelant conduit (UC10).
+func listerMesTrajets(uc application.MesTrajets, auth application.Authentification) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conducteur, err := identite(r, auth)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		trajets, err := uc.Executer(r.Context(), conducteur)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		reponse := make([]trajetJSON, 0, len(trajets))
+		for _, trajet := range trajets {
+			reponse = append(reponse, trajetVersJSON(trajet))
+		}
+		repondreJSON(w, http.StatusOK, reponse)
+	}
+}
+
+// listerMesReservations : GET /me/bookings, les réservations de l'appelant (UC10).
+func listerMesReservations(uc application.MesReservations, auth application.Authentification) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		passager, err := identite(r, auth)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		suivies, err := uc.Executer(r.Context(), passager)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		reponse := make([]reservationSuivieJSON, 0, len(suivies))
+		for _, suivie := range suivies {
+			element := reservationSuivieJSON{reservationJSON: reservationVersJSON(suivie.Reservation)}
+			if suivie.Trajet != nil {
+				trajet := trajetVersJSON(*suivie.Trajet)
+				element.Trajet = &trajet
+			}
+			reponse = append(reponse, element)
+		}
+		repondreJSON(w, http.StatusOK, reponse)
 	}
 }
 

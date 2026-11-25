@@ -169,6 +169,8 @@ func TestToutesLesRoutesProtegeesRefusentSansJeton(t *testing.T) {
 		{http.MethodPut, "/profile"},
 		{http.MethodGet, "/rides"},
 		{http.MethodGet, "/rides/inconnu"},
+		{http.MethodGet, "/me/rides"},
+		{http.MethodGet, "/me/bookings"},
 		{http.MethodPost, "/rides"},
 		{http.MethodPost, "/rides/inconnu/bookings"},
 		{http.MethodPost, "/rides/inconnu/complete"},

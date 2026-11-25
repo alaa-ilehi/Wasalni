@@ -36,6 +36,10 @@ func (t trajetsEnMemoire) Publier(_ context.Context, trajet domain.Trajet) (doma
 }
 
 // Rechercher n'est pas utilisé par les tests de réservation ; la méthode complète le port.
+func (t trajetsEnMemoire) ParConducteur(_ context.Context, _ string) ([]domain.Trajet, error) {
+	return nil, nil
+}
+
 func (t trajetsEnMemoire) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
 	return nil, nil
 }

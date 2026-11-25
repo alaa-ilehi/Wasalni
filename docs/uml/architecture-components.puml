@@ -11,7 +11,7 @@ package "cmd/wasalni" {
 }
 
 package "internal/api" {
-  [Routes\n15 routes HTTP\n(health, auth, profil, trajets, réservations, notes)] as Routes
+  [Routes\n17 routes HTTP\n(health, auth, profil, trajets, me, réservations, notes)] as Routes
   [authentification\njeton Bearer] as Identite
   [statutHTTP\ntable erreur -> code HTTP] as Statut
 }
@@ -27,6 +27,7 @@ package "internal/application" {
   [GererTrajet\n(UC9)] as GererTrajet
   [TerminerTrajet\n(UC11)] as TerminerTrajet
   [Authentification\n(UC13) inscription, connexion, jetons] as Authentification
+  [MesTrajets et MesReservations\n(UC10) mes trajets, mes réservations] as MesElements
   interface "NormaliseurPhoto" as INormaliseur
   interface "Horloge" as IHorloge
   interface "Notificateur" as INotificateur
@@ -80,6 +81,7 @@ Client --> Routes : HTTP + Authorization: Bearer
 
 Routes --> Identite : résout le jeton
 Routes --> Authentification : inscription, connexion, déconnexion
+Routes --> MesElements : GET /me/rides et /me/bookings
 Routes --> GererProfil : Consulter / Enregistrer
 Routes --> PublierTrajet : Executer
 Routes --> RechercherTrajets : Executer
@@ -157,6 +159,7 @@ Authentification --> IHacheur : dépend
 SqlCredential ..|> ICredential : implémente
 SqlSession ..|> ISession : implémente
 Main --> Authentification : instancie
+Main --> MesElements : instancie
 SqlProfil ..> Ouverture : base ouverte et schéma appliqué
 
 Journal ..> ExternalNotif : appel prévu (UC12)

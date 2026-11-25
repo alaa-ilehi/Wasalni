@@ -42,6 +42,10 @@ func (t *trajetsFaux) ParIdentifiant(_ context.Context, identifiant string) (dom
 }
 
 // Rechercher n'est pas utilisé par UC3 ; la présence de la méthode suffit au port.
+func (t *trajetsFaux) ParConducteur(_ context.Context, _ string) ([]domain.Trajet, error) {
+	return nil, t.erreur
+}
+
 func (t *trajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
 	if t.erreur != nil {
 		return nil, t.erreur

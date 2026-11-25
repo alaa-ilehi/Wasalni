@@ -267,3 +267,30 @@ ORDER BY departure ASC`
 	}
 	return trajets, nil
 }
+
+// ParConducteur : trajets d'un conducteur, supprimés exclus, tous statuts (UC10).
+func (r *TrajetRepository) ParConducteur(ctx context.Context, conducteur string) ([]domain.Trajet, error) {
+	requete := "SELECT " + colonnesTrajet + `
+FROM rides
+WHERE driver = ?
+  AND deleted_at IS NULL
+ORDER BY departure ASC, id ASC`
+	rows, err := r.db.QueryContext(ctx, requete, conducteur)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des trajets du conducteur : %w", err)
+	}
+	defer rows.Close()
+
+	trajets := []domain.Trajet{}
+	for rows.Next() {
+		trajet, err := lireTrajet(rows)
+		if err != nil {
+			return nil, fmt.Errorf("lecture des trajets du conducteur : %w", err)
+		}
+		trajets = append(trajets, trajet)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lecture des trajets du conducteur : %w", err)
+	}
+	return trajets, nil
+}

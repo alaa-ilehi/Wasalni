@@ -2,14 +2,15 @@
 
 Document d'architecture du système décrit dans [vision.md](vision.md) et [use-case-elaboration.md](use-case-elaboration.md).
 Il décrit uniquement le service Go : l'implémentation Python de UC3 a été retirée du dépôt et n'est plus une
-référence. Dix cas d'utilisation sont implémentés : UC1, UC2, UC3, UC6, UC7, UC8, UC9, UC11 et UC13. Les décisions
+référence. Onze cas d'utilisation sont implémentés : UC1, UC2, UC3, UC5, UC6, UC7, UC8, UC9, UC10, UC11 et UC13. Les décisions
 structurantes sont tracées en ADR (§16).
 
 ## 1. Périmètre et objectifs
 
-- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Dix sont livrés : UC8 (profil), UC1 (publier),
-  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC6 (évaluer les participants), UC9
-  (modifier/supprimer un trajet), UC11 (terminer un trajet) et UC13 (s'inscrire, se connecter, présenter un jeton).
+- **Périmètre fonctionnel :** les cas d'utilisation de la vision. Onze sont livrés : UC8 (profil), UC1 (publier),
+  UC2 (rechercher), UC7 (détails), UC3 (réserver, décrément atomique), UC5 (annuler une réservation), UC6 (évaluer les
+  participants), UC9 (modifier/supprimer un trajet), UC10 (voir ses trajets et réservations), UC11 (terminer un trajet)
+  et UC13 (s'inscrire, se connecter, présenter un jeton).
 - **Objectifs d'architecture :**
   1. isoler les règles métier du transport (HTTP) et de la persistance (SQLite) ;
   2. garder le risque technique du projet — la réservation concurrente — isolé à un seul endroit : l'unicité des
@@ -48,7 +49,7 @@ session vérifié en base (ADR 0011), et un mot de passe n'est conservé que hac
 | Conteneur | Contenu | Dépend de |
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
-| `internal/api` | routeur `net/http` (quinze routes : `/health`, `/auth/register`, `/auth/login`, `/auth/session`, profil, trajets, réservations, terminaison, évaluations), résolution du jeton `Authorization: Bearer`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
+| `internal/api` | routeur `net/http` (dix-sept routes : `/health`, `/auth/register`, `/auth/login`, `/auth/session`, profil, trajets, `/me/rides`, `/me/bookings`, réservations, terminaison, évaluations), résolution du jeton `Authorization: Bearer`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
 | `internal/application` | dix cas d'utilisation : UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC3 `ReserverPlace`, UC5 `AnnulerReservation`, UC6 `EvaluerParticipant`, UC7 `ConsulterTrajet`, UC8 `GererProfil`, UC9 `GererTrajet`, UC11 `TerminerTrajet`, UC13 `Authentification` | `internal/domain` |
 | `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, `Evaluation`, `Credential`, `Session`, règles de validation, erreurs, ports | bibliothèque standard seule |
 | `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance (profils, trajets, réservations, évaluations, comptes et sessions) | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
@@ -153,6 +154,8 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `POST` | `/rides/{id}/complete` | `Authorization: Bearer` requis | — | `200` trajet `COMPLETED`, `401` session absente, `403` non-propriétaire, `404` trajet inconnu, `409` déjà terminé, `500` erreur inattendue |
 | `DELETE` | `/bookings/{id}` | `Authorization: Bearer` requis | — | `204` annulée, `401` session absente, `404` réservation inconnue ou non possédée, `409` déjà annulée ou échéance atteinte, `500` erreur inattendue |
 | `POST` | `/rides/{id}/ratings` | `Authorization: Bearer` requis | `{score, target, comment?}` | `201` évaluation créée, `400` note ou commentaire invalide, `401` session absente, `403` non participant, `404` trajet inconnu, `409` trajet non terminé ou doublon, `500` erreur inattendue |
+| `GET` | `/me/rides` | `Authorization: Bearer` requis | — | `200` trajets que l'appelant conduit, supprimés exclus, triés par départ (`[]` si aucun), `401` session absente, `500` erreur inattendue |
+| `GET` | `/me/bookings` | `Authorization: Bearer` requis | — | `200` réservations de l'appelant, deux états, plus récente d'abord, trajet joint (`null` s'il a été supprimé) (`[]` si aucune), `401` session absente, `500` erreur inattendue |
 
 Corps de requête (`SaisieProfil`) :
 
@@ -351,7 +354,7 @@ d'utilisation correspondants (§14).
 
 Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** : entités `Profil`, `Trajet`,
 `Reservation`, `Evaluation`, `Credential` et `Session`, leurs ports et adaptateurs (SQLite, hachage PBKDF2) et les dix cas
-d'utilisation, la validation métier et les quinze routes HTTP. Les séquences sont en [UC1](uml/uc1-sequence.puml), [UC5](uml/uc5-sequence.puml),
+d'utilisation, la validation métier et les dix-sept routes HTTP. Les séquences sont en [UC1](uml/uc1-sequence.puml), [UC5](uml/uc5-sequence.puml),
 [UC9](uml/uc9-sequence.puml) et [UC11](uml/uc11-sequence.puml). Le diagramme se maintient avec le code : un diagramme
 qui diverge de l'implémentation est un défaut, pas une illustration.
 
@@ -494,7 +497,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
 | UC5 | `AnnulerReservation` (`internal/application/annuler_reservation.go`) | `ReservationRepository`, `Horloge`, `NotificateurAnnulation` | implémenté : `DELETE /bookings/{id}`, annulation et place rendue atomiquement |
 | UC9 | `GererTrajet` (`internal/application/gerer_trajet.go`) | `TrajetGestionRepository` | implémenté : modification et suppression logique, réservations annulées en transaction |
-| UC10 | — | — | non implémenté (paiement retiré du périmètre, ADR 0003) |
+| UC10 | `MesTrajets` et `MesReservations` (`internal/application/mes_trajets.go`) | `TrajetRepository` (`ParConducteur`), `ReservationRepository` (`ParPassager`) | implémenté : `GET /me/rides` et `GET /me/bookings`, filtrés sur l'identité de la session (`401` sans jeton) |
 
 ## 15. Dette et limites connues
 
@@ -517,8 +520,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Dix UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9, UC11 et UC13 ont du code et des tests ; UC12 reste
-  partiel (journal au lieu d'un système de notification). UC10 reste à faire.
+- **Onze UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9, UC10, UC11 et UC13 ont du code et des tests ; UC12 reste
+  partiel (journal au lieu d'un système de notification).
 
 ## 16. Décisions (ADR)
 
