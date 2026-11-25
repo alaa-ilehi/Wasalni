@@ -3,8 +3,10 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/alaa-ilehi/wasalni/internal/domain"
@@ -233,24 +235,59 @@ func (r *TrajetRepository) ParIdentifiant(ctx context.Context, identifiant strin
 	return trajet, nil
 }
 
-// Rechercher : UC2. Le SQL porte les règles métier (trajets publiés, tri par départ) et les filtres
-// facultatifs ; aucun trajet trouvé n'est une erreur, c'est une liste vide.
-func (r *TrajetRepository) Rechercher(ctx context.Context, criteres domain.CriteresRecherche) ([]domain.Trajet, error) {
-	requete := "SELECT " + colonnesTrajet + `
+// LimiteRechercheParDefaut : nombre de trajets rendus quand le client ne demande pas de limite.
+const LimiteRechercheParDefaut = 50
+
+const (
+	requeteRecherche = "SELECT " + colonnesTrajet + `
 FROM rides
 WHERE status = 'PUBLISHED'
   AND deleted_at IS NULL
   AND (? = '' OR LOWER(origin) = LOWER(?))
   AND (? = '' OR LOWER(destination) = LOWER(?))
-  AND (? = '' OR SUBSTR(departure, 1, 10) = ?)
-ORDER BY departure ASC`
-	rows, err := r.db.QueryContext(ctx, requete,
+  AND (? = '' OR SUBSTR(departure, 1, 10) = ?)`
+	clauseCurseur = `
+  AND (departure > ? OR (departure = ? AND id > ?))`
+	finRecherche = `
+ORDER BY departure ASC, id ASC
+LIMIT ?`
+	requeteParConducteur = "SELECT " + colonnesTrajet + `
+FROM rides
+WHERE driver = ?
+  AND deleted_at IS NULL
+ORDER BY departure ASC, id ASC`
+)
+
+// Rechercher : UC2, une page de trajets publiés triés par départ puis identifiant.
+// Le SQL porte les règles métier et les filtres facultatifs ; aucun trajet trouvé n'est une erreur, c'est une page vide.
+// La pagination est un keyset : le curseur porte le couple (departure, id) de la dernière ligne rendue, donc ni
+// comptage ni décalage, et une insertion entre deux pages ne duplique rien.
+func (r *TrajetRepository) Rechercher(ctx context.Context, criteres domain.CriteresRecherche) (domain.PageTrajets, error) {
+	limite := criteres.Limite
+	if limite <= 0 {
+		limite = LimiteRechercheParDefaut
+	}
+	requete := requeteRecherche
+	arguments := []any{
 		criteres.Origine, criteres.Origine,
 		criteres.Destination, criteres.Destination,
 		criteres.Date, criteres.Date,
-	)
+	}
+	if criteres.Apres != "" {
+		depart, identifiant, err := decoderCurseur(criteres.Apres)
+		if err != nil {
+			return domain.PageTrajets{}, err
+		}
+		requete += clauseCurseur
+		arguments = append(arguments, depart, depart, identifiant)
+	}
+	// Une ligne de plus que demandé : sa présence dit s'il reste une page, sans requête de comptage.
+	requete += finRecherche
+	arguments = append(arguments, limite+1)
+
+	rows, err := r.db.QueryContext(ctx, requete, arguments...)
 	if err != nil {
-		return nil, fmt.Errorf("recherche des trajets : %w", err)
+		return domain.PageTrajets{}, fmt.Errorf("recherche des trajets : %w", err)
 	}
 	defer rows.Close()
 
@@ -258,24 +295,48 @@ ORDER BY departure ASC`
 	for rows.Next() {
 		trajet, err := lireTrajet(rows)
 		if err != nil {
-			return nil, fmt.Errorf("lecture des trajets : %w", err)
+			return domain.PageTrajets{}, fmt.Errorf("lecture des trajets : %w", err)
 		}
 		trajets = append(trajets, trajet)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("lecture des trajets : %w", err)
+		return domain.PageTrajets{}, fmt.Errorf("lecture des trajets : %w", err)
 	}
-	return trajets, nil
+
+	page := domain.PageTrajets{Trajets: trajets}
+	if len(trajets) > limite {
+		page.Trajets = trajets[:limite]
+		dernier := page.Trajets[limite-1]
+		page.CurseurSuivant = encoderCurseur(dernier.Depart, dernier.Identifiant)
+	}
+	return page, nil
+}
+
+// encoderCurseur : le curseur reste opaque pour le client, base64url de <departement RFC 3339>|<identifiant>.
+func encoderCurseur(depart time.Time, identifiant string) string {
+	brut := depart.UTC().Format(time.RFC3339) + "|" + identifiant
+	return base64.RawURLEncoding.EncodeToString([]byte(brut))
+}
+
+// decoderCurseur refuse tout curseur qui ne vient pas de encoderCurseur : le client reçoit un 400, pas un 500.
+func decoderCurseur(curseur string) (string, string, error) {
+	brut, err := base64.RawURLEncoding.DecodeString(curseur)
+	if err != nil {
+		return "", "", domain.ErrCurseurInvalide
+	}
+	depart, identifiant, trouve := strings.Cut(string(brut), "|")
+	if !trouve || identifiant == "" {
+		return "", "", domain.ErrCurseurInvalide
+	}
+	if _, err := time.Parse(time.RFC3339, depart); err != nil {
+		return "", "", domain.ErrCurseurInvalide
+	}
+	return depart, identifiant, nil
 }
 
 // ParConducteur : trajets d'un conducteur, supprimés exclus, tous statuts (UC10).
 func (r *TrajetRepository) ParConducteur(ctx context.Context, conducteur string) ([]domain.Trajet, error) {
-	requete := "SELECT " + colonnesTrajet + `
-FROM rides
-WHERE driver = ?
-  AND deleted_at IS NULL
-ORDER BY departure ASC, id ASC`
-	rows, err := r.db.QueryContext(ctx, requete, conducteur)
+	rows, err := r.db.QueryContext(ctx, requeteParConducteur, conducteur)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des trajets du conducteur : %w", err)
 	}

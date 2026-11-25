@@ -385,7 +385,7 @@ func TestRechercherFiltreEtTrieLesTrajetsPublies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("recherche : %v", err)
 			}
-			obtenu := identifiants(trajets)
+			obtenu := identifiants(trajets.Trajets)
 			if len(obtenu) != len(cas.attendu) {
 				t.Fatalf("résultats = %v, attendu %v", obtenu, cas.attendu)
 			}
@@ -406,7 +406,7 @@ func TestRechercherSansResultatRendUneListeVide(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recherche : %v", err)
 	}
-	if trajets == nil || len(trajets) != 0 {
-		t.Errorf("trajets = %v, attendu une liste vide non nil", trajets)
+	if trajets.Trajets == nil || len(trajets.Trajets) != 0 {
+		t.Errorf("trajets = %v, attendu une liste vide non nil", trajets.Trajets)
 	}
 }

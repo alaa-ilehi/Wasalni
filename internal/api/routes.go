@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -254,6 +256,24 @@ func enregistrerProfil(gerer application.GererProfil, auth application.Authentif
 	}
 }
 
+// pageTrajetsJSON : une page de recherche UC2 et le curseur de la suivante (null sur la dernière page).
+type pageTrajetsJSON struct {
+	Trajets        []trajetJSON `json:"rides"`
+	CurseurSuivant *string      `json:"next_cursor"`
+}
+
+// lireLimite : absent veut dire « la limite par défaut de l'adaptateur » ; hors bornes est une saisie invalide.
+func lireLimite(brut string) (int, error) {
+	if brut == "" {
+		return 0, nil
+	}
+	limite, err := strconv.Atoi(brut)
+	if err != nil || limite < 1 || limite > application.LimiteRechercheMax {
+		return 0, fmt.Errorf("%w : la limite doit être comprise entre 1 et %d", application.ErrRechercheInvalide, application.LimiteRechercheMax)
+	}
+	return limite, nil
+}
+
 // trajetJSON : représentation publique d'un trajet. Les clés suivent la fiche UC1
 // (driver_id, departure_time) ; le délai d'annulation est en heures décimales.
 type trajetJSON struct {
@@ -338,20 +358,31 @@ func rechercherTrajets(rechercher application.RechercherTrajets, auth applicatio
 			return
 		}
 		parametres := r.URL.Query()
-		trajets, err := rechercher.Executer(r.Context(), domain.CriteresRecherche{
+		limite, err := lireLimite(parametres.Get("limit"))
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		page, err := rechercher.Executer(r.Context(), domain.CriteresRecherche{
 			Origine:     parametres.Get("origin"),
 			Destination: parametres.Get("destination"),
 			Date:        parametres.Get("date"),
+			Limite:      limite,
+			Apres:       parametres.Get("after"),
 		})
 		if err != nil {
 			repondreErreur(w, err)
 			return
 		}
-		resultats := make([]trajetJSON, 0, len(trajets))
-		for _, trajet := range trajets {
-			resultats = append(resultats, trajetVersJSON(trajet))
+		reponse := pageTrajetsJSON{Trajets: make([]trajetJSON, 0, len(page.Trajets))}
+		for _, trajet := range page.Trajets {
+			reponse.Trajets = append(reponse.Trajets, trajetVersJSON(trajet))
 		}
-		repondreJSON(w, http.StatusOK, resultats)
+		if page.CurseurSuivant != "" {
+			curseur := page.CurseurSuivant
+			reponse.CurseurSuivant = &curseur
+		}
+		repondreJSON(w, http.StatusOK, reponse)
 	}
 }
 

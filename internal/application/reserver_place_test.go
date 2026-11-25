@@ -46,11 +46,11 @@ func (t *trajetsFaux) ParConducteur(_ context.Context, _ string) ([]domain.Traje
 	return nil, t.erreur
 }
 
-func (t *trajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
+func (t *trajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) (domain.PageTrajets, error) {
 	if t.erreur != nil {
-		return nil, t.erreur
+		return domain.PageTrajets{}, t.erreur
 	}
-	return nil, nil
+	return domain.PageTrajets{}, nil
 }
 
 // reservationsFausses : port ReservationRepository en mémoire, avec l'index unique simulé.

@@ -32,8 +32,8 @@ func (f *mesTrajetsFaux) ParIdentifiant(_ context.Context, identifiant string) (
 	return domain.Trajet{}, domain.ErrTrajetIntrouvable
 }
 
-func (f *mesTrajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) ([]domain.Trajet, error) {
-	return nil, nil
+func (f *mesTrajetsFaux) Rechercher(_ context.Context, _ domain.CriteresRecherche) (domain.PageTrajets, error) {
+	return domain.PageTrajets{}, nil
 }
 
 func (f *mesTrajetsFaux) ParConducteur(_ context.Context, conducteur string) ([]domain.Trajet, error) {

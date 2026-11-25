@@ -109,8 +109,22 @@ func (t Trajet) ResteAvantDepart(maintenant time.Time) time.Duration {
 
 // CriteresRecherche : filtres facultatifs de UC2. Une chaîne vide signifie « aucun filtre ».
 // Date est une date calendaire AAAA-MM-JJ, sans heure ni fuseau.
+// Limite borne le nombre de résultats rendus (0 : la limite par défaut de l'adaptateur).
+// Apres est le curseur opaque rendu par la page précédente ; sa forme ne regarde que l'adaptateur.
 type CriteresRecherche struct {
 	Origine     string
 	Destination string
 	Date        string
+	Limite      int
+	Apres       string
+}
+
+// ErrCurseurInvalide : le curseur de pagination est illisible ou mal formé.
+var ErrCurseurInvalide = errors.New("curseur de pagination invalide")
+
+// PageTrajets : une page de résultats UC2 et le curseur de la suivante.
+// CurseurSuivant est vide quand la page est la dernière.
+type PageTrajets struct {
+	Trajets        []Trajet
+	CurseurSuivant string
 }

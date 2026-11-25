@@ -12,10 +12,11 @@ import (
 // trajetsRechercheFaux : le port TrajetRepository, avec un œil sur les critères reçus.
 type trajetsRechercheFaux struct {
 	*trajetsFaux
-	criteres  domain.CriteresRecherche
-	resultats []domain.Trajet
-	erreur    error
-	appels    int
+	criteres       domain.CriteresRecherche
+	resultats      []domain.Trajet
+	curseurSuivant string
+	erreur         error
+	appels         int
 }
 
 // ParConducteur : UC10, non utilisé par les tests de recherche.
@@ -23,13 +24,13 @@ func (f *trajetsRechercheFaux) ParConducteur(_ context.Context, _ string) ([]dom
 	return nil, nil
 }
 
-func (f *trajetsRechercheFaux) Rechercher(_ context.Context, criteres domain.CriteresRecherche) ([]domain.Trajet, error) {
+func (f *trajetsRechercheFaux) Rechercher(_ context.Context, criteres domain.CriteresRecherche) (domain.PageTrajets, error) {
 	f.appels++
 	f.criteres = criteres
 	if f.erreur != nil {
-		return nil, f.erreur
+		return domain.PageTrajets{}, f.erreur
 	}
-	return f.resultats, nil
+	return domain.PageTrajets{Trajets: f.resultats, CurseurSuivant: f.curseurSuivant}, nil
 }
 
 func depotRecherche() *trajetsRechercheFaux {
@@ -78,11 +79,11 @@ func TestRechercherTrajetsSansResultatRendUneListeVide(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recherche : %v", err)
 	}
-	if trajets == nil {
+	if trajets.Trajets == nil {
 		t.Fatal("une recherche sans résultat doit rendre une liste vide, pas nil")
 	}
-	if len(trajets) != 0 {
-		t.Errorf("trajets = %v, attendu une liste vide", trajets)
+	if len(trajets.Trajets) != 0 {
+		t.Errorf("trajets = %v, attendu une liste vide", trajets.Trajets)
 	}
 }
 
