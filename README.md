@@ -72,6 +72,17 @@ curl -s -H "Authorization: Bearer $JETON" localhost:8080/me/bookings   # mes ré
 curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JETON" localhost:8080/auth/session
 ```
 
+### Interface web et tests fonctionnels
+
+Une interface minimale en HTML/CSS/JS (sans framework, dans `web/static/`) est embarquée dans le binaire et servie
+sous `/app/` (même origine que l'API, donc sans CORS) ; `/` y redirige. Elle couvre UC13, UC8, UC1, UC2, UC7, UC3, UC5,
+UC9, UC10, UC11 et UC6.
+
+```bash
+go run ./cmd/wasalni                                   # puis ouvrir http://localhost:8080/
+node tests/functional/run.mjs http://127.0.0.1:8080    # joue chaque UC de bout en bout contre le serveur (Node 18+)
+```
+
 Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan),
 [docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation) et
 [docs/architecture.md](docs/architecture.md) (architecture du service Go, ADR, modèle de données),

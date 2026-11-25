@@ -19,6 +19,7 @@ import (
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/passwords"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/photos"
 	"github.com/alaa-ilehi/wasalni/internal/infrastructure/sqlite"
+	"github.com/alaa-ilehi/wasalni/web"
 )
 
 // notificateurComplet réunit les quatre ports de notification : un seul adaptateur, choisi une fois au démarrage.
@@ -85,22 +86,28 @@ func main() {
 		horlogeReelle{},
 	)
 
+	// L'interface web est servie sous /app/ (même origine que l'API, donc sans CORS) ; tout le reste va à l'API.
+	racine := http.NewServeMux()
+	racine.Handle("GET /{$}", http.RedirectHandler("/app/", http.StatusFound))
+	racine.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(web.Statique())))
+	racine.Handle("/", api.Routes(api.Deps{
+		Profils:          gererProfil,
+		Recherches:       rechercherTrajets,
+		Trajets:          publierTrajet,
+		Details:          consulterTrajet,
+		Reservations:     reserverPlace,
+		Annulations:      annulerReservation,
+		Terminaisons:     terminerTrajet,
+		GestionTrajets:   gererTrajet,
+		Evaluations:      evaluerParticipant,
+		MesTrajets:       mesTrajets,
+		MesReservations:  mesReservations,
+		Authentification: authentification,
+	}))
+
 	serveur := &http.Server{
-		Addr: *adresse,
-		Handler: api.Routes(api.Deps{
-			Profils:          gererProfil,
-			Recherches:       rechercherTrajets,
-			Trajets:          publierTrajet,
-			Details:          consulterTrajet,
-			Reservations:     reserverPlace,
-			Annulations:      annulerReservation,
-			Terminaisons:     terminerTrajet,
-			GestionTrajets:   gererTrajet,
-			Evaluations:      evaluerParticipant,
-			MesTrajets:       mesTrajets,
-			MesReservations:  mesReservations,
-			Authentification: authentification,
-		}),
+		Addr:              *adresse,
+		Handler:           racine,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

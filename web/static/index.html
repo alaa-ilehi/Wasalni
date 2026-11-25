@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wasalni — Covoiturage</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Wasalni</h1>
+    <div id="session-info" hidden>
+      Connecté : <strong id="user-id"></strong>
+      <button id="btn-logout" class="secondary">Se déconnecter</button>
+    </div>
+  </header>
+
+  <div id="message" hidden></div>
+
+  <!-- UC13 : inscription / connexion -->
+  <section id="auth-view">
+    <h2>Connexion</h2>
+    <form id="form-auth">
+      <label>Identifiant <input name="id" required></label>
+      <label>Mot de passe (8 caractères min.) <input name="password" type="password" required minlength="8"></label>
+      <div class="row">
+        <button type="submit" data-action="login">Se connecter</button>
+        <button type="submit" data-action="register" class="secondary">S'inscrire</button>
+      </div>
+    </form>
+  </section>
+
+  <main id="app-view" hidden>
+    <nav>
+      <button data-tab="search" class="active">Rechercher</button>
+      <button data-tab="publish">Publier</button>
+      <button data-tab="my-rides">Mes trajets</button>
+      <button data-tab="my-bookings">Mes réservations</button>
+      <button data-tab="profile">Mon profil</button>
+    </nav>
+
+    <!-- UC2 : rechercher -->
+    <section id="tab-search" class="tab">
+      <h2>Rechercher un trajet</h2>
+      <form id="form-search" class="inline">
+        <input name="origin" placeholder="Départ">
+        <input name="destination" placeholder="Arrivée">
+        <input name="date" type="date">
+        <button type="submit">Rechercher</button>
+      </form>
+      <div id="search-results"></div>
+      <button id="btn-more" class="secondary" hidden>Page suivante</button>
+    </section>
+
+    <!-- UC1 / UC9 : publier ou modifier -->
+    <section id="tab-publish" class="tab" hidden>
+      <h2 id="publish-title">Publier un trajet</h2>
+      <form id="form-ride">
+        <input type="hidden" name="ride_id">
+        <label>Départ <input name="origin" required></label>
+        <label>Arrivée <input name="destination" required></label>
+        <label>Date et heure de départ <input name="departure_time" type="datetime-local" required></label>
+        <label>Nombre de places <input name="seats_total" type="number" min="1" required></label>
+        <label>Prix (DT) <input name="price" type="number" min="0" step="0.5" required></label>
+        <label>Délai d'annulation (heures avant le départ) <input name="cancel_delay_hours" type="number" min="0" step="0.5" value="2"></label>
+        <div class="row">
+          <button type="submit" id="btn-ride-submit">Publier</button>
+          <button type="button" id="btn-ride-cancel" class="secondary" hidden>Annuler la modification</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- UC10 : mes trajets (UC9 modifier/supprimer, UC11 terminer, UC6 évaluer) -->
+    <section id="tab-my-rides" class="tab" hidden>
+      <h2>Mes trajets (conducteur)</h2>
+      <div id="my-rides"></div>
+    </section>
+
+    <!-- UC10 : mes réservations (UC5 annuler, UC6 évaluer) -->
+    <section id="tab-my-bookings" class="tab" hidden>
+      <h2>Mes réservations (passager)</h2>
+      <div id="my-bookings"></div>
+    </section>
+
+    <!-- UC8 : profil -->
+    <section id="tab-profile" class="tab" hidden>
+      <h2>Mon profil</h2>
+      <img id="profile-photo" alt="" hidden>
+      <form id="form-profile">
+        <label>Nom <input name="name" required></label>
+        <label>Âge (18 à 99) <input name="age" type="number" min="18" max="99" required></label>
+        <label>Sexe
+          <select name="sex">
+            <option value="">—</option>
+            <option value="MALE">Homme</option>
+            <option value="FEMALE">Femme</option>
+            <option value="OTHER">Autre</option>
+          </select>
+        </label>
+        <label>Photo <input name="photo" type="file" accept="image/*"></label>
+        <button type="submit">Enregistrer</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- UC7 : détails d'un trajet -->
+  <dialog id="dlg-details">
+    <div id="details-body"></div>
+    <form method="dialog"><button class="secondary">Fermer</button></form>
+  </dialog>
+
+  <!-- UC6 : évaluer -->
+  <dialog id="dlg-rate">
+    <h3>Évaluer un participant</h3>
+    <form id="form-rate">
+      <input type="hidden" name="ride_id">
+      <label>Personne évaluée (identifiant) <input name="target" required></label>
+      <label>Note (1 à 5) <input name="score" type="number" min="1" max="5" value="5" required></label>
+      <label>Commentaire <textarea name="comment" rows="2"></textarea></label>
+      <div class="row">
+        <button type="submit">Envoyer</button>
+        <button type="button" class="secondary" id="btn-rate-close">Fermer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
