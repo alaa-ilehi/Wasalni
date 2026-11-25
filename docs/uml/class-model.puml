@@ -64,6 +64,7 @@ package "internal/domain" {
     Publier(ctx, Trajet) : (Trajet, error)
     ParIdentifiant(ctx, identifiant) : (Trajet, error)
     Rechercher(ctx, CriteresRecherche) : ([]Trajet, error)
+    ParConducteur(ctx, conducteur) : ([]Trajet, error)
   }
 
   interface TrajetFinRepository {
@@ -350,6 +351,23 @@ package "internal/application" {
     Resoudre(ctx, jeton) : (string, error)
   }
 
+  class MesTrajets {
+    trajets : TrajetRepository
+    Executer(ctx, conducteur) : ([]Trajet, error)
+  }
+
+  class MesReservations {
+    reservations : ReservationRepository
+    trajets : TrajetRepository
+    Executer(ctx, passager) : ([]ReservationSuivie, error)
+  }
+
+  note right of MesReservations
+    RéservationSuivie joint le trajet quand il est encore
+    lisible ; trajet supprimé (UC9) : jointure nulle
+    Une liste vide n'est pas une erreur (A2 de UC10)
+  end note
+
   interface HacheurMotDePasse {
     Hacher(motDePasse) : (Credential, error)
     Verifier(motDePasse, Credential) : bool
@@ -473,6 +491,8 @@ package "internal/api" {
     POST /auth/register
     POST /auth/login
     DELETE /auth/session
+    GET /me/rides
+    GET /me/bookings
   }
 
   class identite <<fonction>> {
@@ -582,6 +602,8 @@ Routes --> TerminerTrajet : appelle
 Routes --> GererTrajet : appelle
 Routes --> EvaluerParticipant : appelle
 Routes --> Authentification : appelle (inscription, connexion, déconnexion)
+Routes --> MesTrajets : appelle (GET /me/rides)
+Routes --> MesReservations : appelle (GET /me/bookings)
 Routes ..> identite : résout le jeton Bearer
 Routes ..> statutHTTP : traduit les erreurs
 statutHTTP ..> Erreurs : errors.Is
@@ -592,6 +614,8 @@ Racine --> SqliteReservationRepository : instancie
 Racine --> SqliteEvaluationRepository : instancie
 Racine --> normaliseurPhoto : instancie
 Racine --> Authentification : instancie (hacheur PBKDF2)
+Racine --> MesTrajets : instancie
+Racine --> MesReservations : instancie
 Racine --> SqliteCredentialRepository : instancie
 Racine --> SqliteSessionRepository : instancie
 Authentification --> CredentialRepository : dépend

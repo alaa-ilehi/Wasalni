@@ -18,6 +18,11 @@ type trajetsRechercheFaux struct {
 	appels    int
 }
 
+// ParConducteur : UC10, non utilisé par les tests de recherche.
+func (f *trajetsRechercheFaux) ParConducteur(_ context.Context, _ string) ([]domain.Trajet, error) {
+	return nil, nil
+}
+
 func (f *trajetsRechercheFaux) Rechercher(_ context.Context, criteres domain.CriteresRecherche) ([]domain.Trajet, error) {
 	f.appels++
 	f.criteres = criteres

@@ -144,11 +144,16 @@ Fiche d'implémentation : [uc5-cancel-booking.md](uc5-cancel-booking.md).
 
 - **Acteur :** Utilisateur identifié.
 - **Scénario nominal :**
-  1. L'utilisateur demande ses trajets.
-  2. Le système renvoie les trajets qu'il conduit et les réservations qu'il détient, avec statut et dates.
+  1. L'utilisateur demande ses trajets (`GET /me/rides`) et ses réservations (`GET /me/bookings`) avec son jeton.
+  2. Le système renvoie les trajets qu'il conduit (tous statuts, supprimés exclus, triés par départ croissant) et les
+     réservations qu'il détient (les deux états, de la plus récente à la plus ancienne, chacune avec son trajet).
   3. Il peut ensuite suivre UC5, UC9, UC11 ou UC6.
-- **Scénarios alternatifs :** A1 aucune identité -> `401` ; A2 rien -> liste vide.
-- **Règles métier :** les trajets à venir et passés sont renvoyés ; les évaluations ne sont proposées que sur les trajets terminés.
+- **Scénarios alternatifs :** A1 aucune identité ou jeton expiré -> `401` ; A2 rien -> `200` avec `[]` ; A3 trajet
+  supprimé par UC9 -> absent de `GET /me/rides`, et la réservation annulée par cette suppression apparaît avec
+  `"ride": null`.
+- **Règles métier :** les trajets à venir et passés sont renvoyés ; chaque liste ne contient que les données de
+  l'appelant, l'identité venant de la session et jamais d'un paramètre ; les évaluations ne sont proposées que sur les
+  trajets terminés.
 
 ## UC11 - Terminer un trajet
 

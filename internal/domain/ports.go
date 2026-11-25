@@ -20,6 +20,9 @@ type TrajetRepository interface {
 	Publier(ctx context.Context, t Trajet) (Trajet, error)
 	ParIdentifiant(ctx context.Context, identifiant string) (Trajet, error)
 	Rechercher(ctx context.Context, criteres CriteresRecherche) ([]Trajet, error)
+	// ParConducteur liste les trajets d'un conducteur, trajets supprimés exclus, du départ le plus proche
+	// au plus lointain (UC10). Une liste vide n'est pas une erreur.
+	ParConducteur(ctx context.Context, conducteur string) ([]Trajet, error)
 }
 
 // TrajetFinRepository porte la transition UC11 vers COMPLETED.

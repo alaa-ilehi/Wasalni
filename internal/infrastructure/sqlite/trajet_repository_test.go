@@ -195,6 +195,49 @@ func TestUC9ModifierAjustePlacesEtSupprimerAnnuleReservations(t *testing.T) {
 	}
 }
 
+// UC10 : les trajets d'un conducteur, supprimés exclus, du départ le plus proche au plus lointain.
+func TestParConducteurListeLesTrajetsNonSupprimes(t *testing.T) {
+	ctx := context.Background()
+	depot, _, fermer := baseTrajet(t)
+	defer fermer()
+
+	publier := func(conducteur, origine string, depart time.Time) domain.Trajet {
+		t.Helper()
+		trajet := trajetAPublier()
+		trajet.Conducteur = conducteur
+		trajet.Origine = origine
+		trajet.Depart = depart
+		cree, err := depot.Publier(ctx, trajet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cree
+	}
+	premier := publier("bob", "Lyon", time.Date(2026, 12, 1, 8, 30, 0, 0, time.UTC))
+	second := publier("bob", "Paris", time.Date(2026, 12, 3, 9, 0, 0, 0, time.UTC))
+	publier("alice", "Nice", time.Date(2026, 12, 2, 7, 0, 0, 0, time.UTC))
+
+	liste, err := depot.ParConducteur(ctx, "bob")
+	if err != nil {
+		t.Fatalf("lecture : %v", err)
+	}
+	if len(liste) != 2 || liste[0].Identifiant != premier.Identifiant || liste[1].Identifiant != second.Identifiant {
+		t.Fatalf("trajets de bob = %+v, attendu les deux siens triés par départ", liste)
+	}
+
+	// Un trajet supprimé (UC9) disparaît de la liste, et un conducteur inconnu rend une liste vide.
+	if err := depot.Supprimer(ctx, premier.Identifiant, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	liste, err = depot.ParConducteur(ctx, "bob")
+	if err != nil || len(liste) != 1 || liste[0].Identifiant != second.Identifiant {
+		t.Fatalf("trajets après suppression = %+v, %v", liste, err)
+	}
+	if liste, err := depot.ParConducteur(ctx, "inconnu"); err != nil || len(liste) != 0 {
+		t.Fatalf("conducteur inconnu = %+v, %v, attendu vide", liste, err)
+	}
+}
+
 // La suppression annule les réservations actives : leurs places doivent revenir au trajet, comme dans UC5.
 func TestSupprimerRendLesPlacesDesReservationsAnnulees(t *testing.T) {
 	ctx := context.Background()

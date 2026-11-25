@@ -60,6 +60,10 @@ func main() {
 	terminerTrajet := application.NouveauTerminerTrajet(trajets, notifications.NouveauJournal(journal))
 	gererTrajet := application.NouveauGererTrajet(trajets, trajets, horlogeReelle{}).AvecNotificateur(notifications.NouveauJournal(journal))
 
+	// UC10 : deux listes en lecture seule, filtrées sur l'identité de la session.
+	mesTrajets := application.NouveauMesTrajets(trajets)
+	mesReservations := application.NouveauMesReservations(reservations, trajets)
+
 	// UC13 : les comptes et les sessions vivent à côté des profils ; aucun jeton n'est stocké en clair.
 	authentification := application.NouvelleAuthentification(
 		sqlite.NouveauCredentialRepository(db),
@@ -80,6 +84,8 @@ func main() {
 			Terminaisons:     terminerTrajet,
 			GestionTrajets:   gererTrajet,
 			Evaluations:      evaluerParticipant,
+			MesTrajets:       mesTrajets,
+			MesReservations:  mesReservations,
 			Authentification: authentification,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

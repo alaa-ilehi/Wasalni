@@ -4,7 +4,9 @@
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
-**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC6 (évaluer), UC11 (terminer un trajet) et UC13 (s'authentifier) sont livrés.
+**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC5 (annuler), UC6
+(évaluer), UC9 (modifier/supprimer), UC10 (mes trajets et réservations), UC11 (terminer un trajet) et UC13 (s'authentifier)
+sont livrés ; UC12 reste partiel (journal au lieu d'un système de notification).
 UC3 consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans surréservation possible
 (ADR 0004) ; `bookings.ride_id` référence `rides(id)`. UC6 enregistre une note par couple sur un trajet terminé et alimente
 `driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. UC13 remplace l'en-tête de
@@ -30,6 +32,8 @@ JETON=$(curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' \
 # 3. appeler une route protégée (toutes le sont, sauf /health et /auth/*)
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/profile
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/rides
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/me/rides      # mes trajets (UC10)
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/me/bookings   # mes réservations (UC10)
 
 # 4. fermer la session : le jeton devient inutilisable
 curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JETON" localhost:8080/auth/session
