@@ -44,6 +44,9 @@ défavorable (doublon) reste correct parce que la transaction est annulée en bl
 - **Coût assumé :** une place est décrémentée avant l'insertion ; si l'insertion échoue pour une autre raison, la place
   n'est rendue que par l'annulation de la transaction, ce qui suppose que l'adaptateur n'oublie jamais son `defer`
   `Rollback` (en place).
+- La suppression d'un trajet (UC9) annule ses réservations actives dans la même transaction **et rend leurs places**
+  (`seats_available = MIN(seats_available + annulées, seats_total)`), pour que la ligne conservée par la suppression
+  logique respecte encore l'invariant « places + réservations actives = places totales ».
 - La clé étrangère a été ajoutée par **reconstruction de table** (`bookings` → `bookings_ancienne` → `bookings`), SQLite
   ne sachant pas modifier une table existante. La copie est stricte : une réservation orpheline fait échouer le
   démarrage plutôt que d'être perdue en silence.

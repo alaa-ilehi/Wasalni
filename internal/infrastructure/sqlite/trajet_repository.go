@@ -153,10 +153,17 @@ func (r *TrajetRepository) Supprimer(ctx context.Context, identifiant, conducteu
 	if err := trajet.ValiderTerminaison(conducteur); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE bookings SET status='CANCELLED' WHERE ride_id=? AND status='ACTIVE'", identifiant); err != nil {
+	annulees, err := tx.ExecContext(ctx, "UPDATE bookings SET status='CANCELLED' WHERE ride_id=? AND status='ACTIVE'", identifiant)
+	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE rides SET deleted_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?", identifiant); err != nil {
+	rendues, err := annulees.RowsAffected()
+	if err != nil {
+		return err
+	}
+	// Les réservations annulées rendent leurs places, comme le fait UC5 ; MIN garde la ligne valide même
+	// sur une base déjà incohérente (ADR 0004 : places + réservations actives = places totales).
+	if _, err := tx.ExecContext(ctx, "UPDATE rides SET seats_available=MIN(seats_available+?, seats_total), deleted_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?", rendues, identifiant); err != nil {
 		return err
 	}
 	return tx.Commit()

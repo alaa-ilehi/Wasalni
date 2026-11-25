@@ -195,6 +195,63 @@ func TestUC9ModifierAjustePlacesEtSupprimerAnnuleReservations(t *testing.T) {
 	}
 }
 
+// La suppression annule les réservations actives : leurs places doivent revenir au trajet, comme dans UC5.
+func TestSupprimerRendLesPlacesDesReservationsAnnulees(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Ouvrir(ctx, filepath.Join(t.TempDir(), "suppression.db"))
+	if err != nil {
+		t.Fatalf("ouverture de la base : %v", err)
+	}
+	defer db.Close()
+	depot := sqlite.NouveauTrajetRepository(db)
+	reservations := sqlite.NouveauReservationRepository(db)
+
+	placesDuTrajet := func(identifiant string) (int, int) {
+		t.Helper()
+		var places, total int
+		if err := db.QueryRowContext(ctx, "SELECT seats_available, seats_total FROM rides WHERE id=?", identifiant).Scan(&places, &total); err != nil {
+			t.Fatalf("lecture directe du trajet : %v", err)
+		}
+		return places, total
+	}
+
+	cree, err := depot.Publier(ctx, trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, passager := range []string{"alice", "carol"} {
+		if _, err := reservations.Reserver(ctx, domain.Reservation{Trajet: cree.Identifiant, Passager: passager, Statut: domain.ReservationActive}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if places, total := placesDuTrajet(cree.Identifiant); places != 1 || total != 3 {
+		t.Fatalf("avant suppression : places = %d/%d, attendu 1/3", places, total)
+	}
+
+	if err := depot.Supprimer(ctx, cree.Identifiant, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	// La lecture publique masque un trajet supprimé : le compteur se vérifie en SQL, sur la ligne conservée.
+	if places, total := placesDuTrajet(cree.Identifiant); places != total {
+		t.Fatalf("après suppression : places = %d/%d, attendu places = total", places, total)
+	}
+	if err := depot.Supprimer(ctx, cree.Identifiant, "bob"); !errors.Is(err, domain.ErrTrajetIntrouvable) {
+		t.Fatalf("seconde suppression : %v, attendu ErrTrajetIntrouvable", err)
+	}
+
+	// Un trajet sans réservation active ne bouge pas.
+	sansReservation, err := depot.Publier(ctx, trajetAPublier())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := depot.Supprimer(ctx, sansReservation.Identifiant, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	if places, total := placesDuTrajet(sansReservation.Identifiant); places != total {
+		t.Fatalf("suppression sans réservation : places = %d/%d, attendu places = total", places, total)
+	}
+}
+
 // Le compteur de places est consommé par la réservation : la lecture suivante voit 2 places sur 3.
 func TestReserverDecrementeLesPlaces(t *testing.T) {
 	ctx := context.Background()
