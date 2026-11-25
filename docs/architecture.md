@@ -49,12 +49,13 @@ session vérifié en base (ADR 0011), et un mot de passe n'est conservé que hac
 |---|---|---|
 | `cmd/wasalni` | binaire HTTP unique : racine de composition, serveur `net/http`, arrêt propre | les paquets `internal/...`, le fichier SQLite |
 | `internal/api` | routeur `net/http` (quinze routes : `/health`, `/auth/register`, `/auth/login`, `/auth/session`, profil, trajets, réservations, terminaison, évaluations), résolution du jeton `Authorization: Bearer`, décodage JSON, table erreur → code HTTP, borne du corps | `internal/application`, `internal/domain` |
-| `internal/application` | cas d'utilisation UC8 `GererProfil`, UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC7 `ConsulterTrajet`, UC3 `ReserverPlace`, UC6 `EvaluerParticipant` et UC11 `TerminerTrajet` | `internal/domain` |
-| `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, `Evaluation`, règles de validation, erreurs, ports | bibliothèque standard seule |
-| `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
+| `internal/application` | dix cas d'utilisation : UC1 `PublierTrajet`, UC2 `RechercherTrajets`, UC3 `ReserverPlace`, UC5 `AnnulerReservation`, UC6 `EvaluerParticipant`, UC7 `ConsulterTrajet`, UC8 `GererProfil`, UC9 `GererTrajet`, UC11 `TerminerTrajet`, UC13 `Authentification` | `internal/domain` |
+| `internal/domain` | entités `Profil`, `Trajet`, `Reservation`, `Evaluation`, `Credential`, `Session`, règles de validation, erreurs, ports | bibliothèque standard seule |
+| `internal/infrastructure/sqlite` | ouverture de la base, pragmas, schéma, adaptateurs des ports de persistance (profils, trajets, réservations, évaluations, comptes et sessions) | `internal/domain`, `database/sql`, `modernc.org/sqlite` |
+| `internal/infrastructure/passwords` | hachage et vérification des mots de passe : PBKDF2-HMAC-SHA256, sel neuf par appel | bibliothèque standard seule |
 | `internal/infrastructure/photos` | normalisation de la photo : décodage, réduction, encodage WebP | bibliothèque standard + `webp-go-pure` |
 | `internal/infrastructure/notifications` | adaptateurs `Notificateur` et `NotificateurFinTrajet` : journalisation des événements | `internal/domain`, `log/slog` |
-| Fichier SQLite | tables `users`, `rides`, `bookings`, `ratings` ; clé étrangère `bookings.ride_id → rides(id)` | — |
+| Fichier SQLite | six tables : `users`, `rides`, `bookings`, `ratings`, `credentials`, `sessions` ; clé étrangère `bookings.ride_id → rides(id)` | — |
 
 Il n'y a ni file d'attente, ni cache, ni service tiers dans le chemin d'une requête : un appel HTTP traverse l'adaptateur,
 le cas d'utilisation, puis la base.
@@ -346,9 +347,9 @@ d'utilisation correspondants (§14).
 
 ### Modèle de classes (périmètre implémenté)
 
-Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** pour UC8, UC1, UC5 et UC11 :
-entités `Profil`, `Trajet` et `Reservation`, leurs ports et adaptateurs, la validation métier, les cas d'utilisation et les
-routes HTTP. Les séquences sont en [UC1](uml/uc1-sequence.puml), [UC5](uml/uc5-sequence.puml),
+Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** : entités `Profil`, `Trajet`,
+`Reservation`, `Evaluation`, `Credential` et `Session`, leurs ports et adaptateurs (SQLite, hachage PBKDF2) et les dix cas
+d'utilisation, la validation métier et les quinze routes HTTP. Les séquences sont en [UC1](uml/uc1-sequence.puml), [UC5](uml/uc5-sequence.puml),
 [UC9](uml/uc9-sequence.puml) et [UC11](uml/uc11-sequence.puml). Le diagramme se maintient avec le code : un diagramme
 qui diverge de l'implémentation est un défaut, pas une illustration.
 
@@ -531,3 +532,4 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | [0008](adr/0008-photo-profil-webp.md) | Photo de profil en WebP sans perte, 512 px et 512 Kio au plus, budget de pixels | accepté |
 | [0009](adr/0009-choix-go.md) | Go avec `net/http`, `database/sql` et `modernc.org/sqlite` | accepté |
 | [0010](adr/0010-evaluations.md) | Évaluations en table dédiée, moyenne calculée à la lecture et exposée par UC7 | appliqué |
+| [0011](adr/0011-authentification-sessions.md) | Authentification par session : jetons opaques hachés en base, mots de passe PBKDF2 salés en bibliothèque standard, jeton Bearer sur toutes les routes sauf `/health` et `/auth/*` | appliqué |
