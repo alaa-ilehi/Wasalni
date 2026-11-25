@@ -311,6 +311,8 @@ Invariants portés par le schéma ou par le domaine :
 - `rides.status` est contraint à `PUBLISHED` ou `COMPLETED` ; UC11 effectue la transition irréversible.
 - `rides.seats_available` démarre à `seats_total` et décroît d'une unité par réservation : `UPDATE ... WHERE
   seats_available > 0` qui ne modifie aucune ligne vaut `domain.ErrTrajetComplet` et annule la transaction (ADR 0004).
+  Il remonte d'une unité par annulation (UC5) et, à la suppression d'un trajet (UC9), du nombre de réservations
+  effectivement annulées : « places + réservations actives = places totales » vaut aussi sur une ligne supprimée.
 - `bookings.ride_id` référence `rides(id)` : une réservation orpheline est refusée par la base, en plus du trajet
   obligatoirement lu par le cas d'usage.
 - `ratings.score` est borné à 1–5 et l'index `ratings_unique` interdit un second avis pour le même couple
