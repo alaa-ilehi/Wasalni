@@ -39,13 +39,24 @@ deleted_at TEXT` si elle manque. Le schéma reste idempotent et rejouable (ADR 0
 
 ## Ce que la colonne change dans les lectures
 
-Trois requêtes filtrent `deleted_at IS NULL` — et rien d'autre ne la lit :
+La colonne est lue à deux titres : trois lectures publiques **excluent** les trajets supprimés, et trois requêtes la
+portent comme **garde-fou** dans une transaction.
+
+Les trois lectures publiques :
 
 | Requête | Cas d'usage | Effet de la suppression |
 |---|---|---|
 | `Rechercher` | UC2, page de résultats paginée | le trajet disparaît des recherches |
 | `ParIdentifiant` | UC7 et UC3 (avant réservation) | le trajet devient `404`, donc non réservable |
 | `ParConducteur` | UC10, « mes trajets » | le trajet disparaît de la liste du conducteur |
+
+Les trois garde-fous, qui empêchent d'agir sur un trajet déjà supprimé :
+
+| Requête | Cas d'usage | Sans la condition |
+|---|---|---|
+| décrément conditionnel de `seats_available` | UC3, `reservation_repository.go` | une place serait vendue sur un trajet supprimé |
+| lecture préalable de la modification | UC9, `trajet_repository.go` | un trajet supprimé serait modifiable |
+| lecture préalable de la suppression | UC9, `trajet_repository.go` | une seconde suppression réussirait en silence |
 
 `ReservationRepository.ParPassager` (UC10) ne filtre **pas** : le passager voit toujours sa réservation, et l'API rend
 `ride: null` quand le trajet a été supprimé. C'est la raison d'être de la ligne conservée — l'historique du passager
