@@ -20,7 +20,7 @@ Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go
 
 ### Configuration
 
-Le binaire se configure par variables d'environnement, les deux premières doublées d'un drapeau (le drapeau gagne) :
+Le binaire se configure par trois variables d'environnement, les deux premières doublées d'un drapeau (le drapeau gagne) :
 
 | Variable | Drapeau | Défaut | Rôle |
 |---|---|---|---|

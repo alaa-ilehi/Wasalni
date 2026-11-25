@@ -39,28 +39,40 @@ deleted_at TEXT` si elle manque. Le schéma reste idempotent et rejouable (ADR 0
 
 ## Ce que la colonne change dans les lectures
 
-La colonne est lue à deux titres : trois lectures publiques **excluent** les trajets supprimés, et trois requêtes la
-portent comme **garde-fou** dans une transaction.
+Neuf conditions SQL la lisent, en trois rôles. La liste ci-dessous est exhaustive : elle se vérifie par
+`grep -n "deleted_at" internal/infrastructure/sqlite/*.go | grep -v _test`.
 
-Les trois lectures publiques :
+### Trois lectures publiques excluent les trajets supprimés
 
-| Requête | Cas d'usage | Effet de la suppression |
+| Fonction | Cas d'usage | Effet de la suppression |
 |---|---|---|
 | `Rechercher` | UC2, page de résultats paginée | le trajet disparaît des recherches |
-| `ParIdentifiant` | UC7 et UC3 (avant réservation) | le trajet devient `404`, donc non réservable |
+| `ParIdentifiant` | UC7, et lectures préalables d'UC3, UC9 et UC11 | le trajet devient `404`, donc ni consultable ni modifiable |
 | `ParConducteur` | UC10, « mes trajets » | le trajet disparaît de la liste du conducteur |
 
-Les trois garde-fous, qui empêchent d'agir sur un trajet déjà supprimé :
+### Cinq conditions de garde-fou, à l'intérieur d'une transaction
 
-| Requête | Cas d'usage | Sans la condition |
+| Fonction et condition | Cas d'usage | Sans la condition |
 |---|---|---|
-| décrément conditionnel de `seats_available` | UC3, `reservation_repository.go` | une place serait vendue sur un trajet supprimé |
-| lecture préalable de la modification | UC9, `trajet_repository.go` | un trajet supprimé serait modifiable |
-| lecture préalable de la suppression | UC9, `trajet_repository.go` | une seconde suppression réussirait en silence |
+| `Reserver` : décrément de `seats_available` | UC3 | une place serait vendue sur un trajet supprimé |
+| `Modifier` : lecture préalable | UC9 | un trajet supprimé serait modifiable |
+| `Modifier` : `UPDATE ... WHERE ... deleted_at IS NULL` | UC9 | une suppression concurrente, entre la lecture et l'écriture, serait écrasée |
+| `Supprimer` : lecture préalable | UC9 | une seconde suppression réussirait en silence |
+| `Terminer` : lecture préalable | UC11 | un trajet supprimé pourrait être terminé |
 
-`ReservationRepository.ParPassager` (UC10) ne filtre **pas** : le passager voit toujours sa réservation, et l'API rend
-`ride: null` quand le trajet a été supprimé. C'est la raison d'être de la ligne conservée — l'historique du passager
-survit à la décision du conducteur.
+La colonne du milieu n'est pas décorative : chaque condition ferme une course entre la vérification et l'écriture.
+
+### Une jointure la tolère
+
+`ReservationRepository.ParPassagerAvecTrajet` (UC10) porte la condition dans le `LEFT JOIN`, pas dans le `WHERE` :
+
+```sql
+LEFT JOIN rides r ON r.id = b.ride_id AND r.deleted_at IS NULL
+```
+
+Le trajet supprimé rend des colonnes nulles et la réservation reste dans le résultat, avec `Trajet` à `nil` côté
+domaine, donc `ride: null` côté API. `ParPassager`, la même lecture sans jointure, ne filtre pas du tout : c'est la
+raison d'être de la ligne conservée — l'historique du passager survit à la décision du conducteur.
 
 Les deux index partiels `rides_search` et `rides_driver` portent la même condition `WHERE deleted_at IS NULL` : ils ne
 contiennent que les trajets lisibles.
