@@ -311,6 +311,58 @@ func TestParPassagerRendLesReservationsDuPassagerTriees(t *testing.T) {
 	}
 }
 
+// ParPassagerAvecTrajet : le trajet est joint dans la même lecture, et un trajet supprimé (UC9) rend
+// nil sans faire disparaître la réservation.
+func TestParPassagerAvecTrajetJointLeTrajetEtTolereLaSuppression(t *testing.T) {
+	b := nouveauBanc(t)
+	garde, supprime := b.trajetPublie(t, 2), b.trajetPublie(t, 2)
+
+	for _, trajet := range []string{garde, supprime} {
+		if _, err := reserver(t, b, trajet, "alice"); err != nil {
+			t.Fatalf("réservation %s : %v", trajet, err)
+		}
+	}
+	if _, err := reserver(t, b, garde, "bob"); err != nil {
+		t.Fatalf("réservation de bob : %v", err)
+	}
+	if err := b.trajets.Supprimer(context.Background(), supprime, "bob"); err != nil {
+		t.Fatalf("suppression du trajet : %v", err)
+	}
+
+	paires, err := b.reservations.ParPassagerAvecTrajet(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("lecture jointe : %v", err)
+	}
+	if len(paires) != 2 {
+		t.Fatalf("réservations d'alice = %d, attendu 2", len(paires))
+	}
+	joints := map[string]*domain.Trajet{}
+	for _, paire := range paires {
+		if paire.Reservation.Passager != "alice" {
+			t.Errorf("passager = %q, attendu alice", paire.Reservation.Passager)
+		}
+		joints[paire.Reservation.Trajet] = paire.Trajet
+	}
+	if joints[garde] == nil {
+		t.Fatalf("trajet lisible non joint : %+v", paires)
+	}
+	if joints[garde].Identifiant != garde || joints[garde].Conducteur != "bob" ||
+		joints[garde].PlacesTotal != 2 || joints[garde].Statut != domain.TrajetPublie {
+		t.Errorf("trajet joint = %+v, attendu celui de bob avec 2 places", joints[garde])
+	}
+	if joints[supprime] != nil {
+		t.Errorf("trajet supprimé toujours joint : %+v", joints[supprime])
+	}
+
+	vides, err := b.reservations.ParPassagerAvecTrajet(context.Background(), "inconnu")
+	if err != nil {
+		t.Fatalf("lecture d'un passager sans réservation : %v", err)
+	}
+	if vides == nil || len(vides) != 0 {
+		t.Errorf("réservations = %v, attendu une liste vide non nulle", vides)
+	}
+}
+
 // Le décrément conditionnel est la seule protection contre la surréservation : il doit tenir sous
 // appels simultanés, sans verrou applicatif ni boucle de reprise (ADR 0004).
 func TestReservationsConcurrentesNeSureserventPas(t *testing.T) {

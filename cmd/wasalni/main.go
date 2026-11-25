@@ -75,7 +75,7 @@ func main() {
 
 	// UC10 : deux listes en lecture seule, filtrées sur l'identité de la session.
 	mesTrajets := application.NouveauMesTrajets(trajets)
-	mesReservations := application.NouveauMesReservations(reservations, trajets)
+	mesReservations := application.NouveauMesReservations(reservations)
 
 	// UC13 : les comptes et les sessions vivent à côté des profils ; aucun jeton n'est stocké en clair.
 	authentification := application.NouvelleAuthentification(

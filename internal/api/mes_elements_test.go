@@ -38,7 +38,7 @@ func nouveauBancMes(t *testing.T) *bancMes {
 	reservations := sqlite.NouveauReservationRepository(db)
 	serveur := httptest.NewServer(api.Routes(api.Deps{
 		MesTrajets:       application.NouveauMesTrajets(trajets),
-		MesReservations:  application.NouveauMesReservations(reservations, trajets),
+		MesReservations:  application.NouveauMesReservations(reservations),
 		Authentification: identite.auth,
 	}))
 	t.Cleanup(serveur.Close)

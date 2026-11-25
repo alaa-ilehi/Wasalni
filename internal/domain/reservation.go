@@ -34,6 +34,13 @@ type Reservation struct {
 	CreeLe      time.Time
 }
 
+// ReservationAvecTrajet : une réservation et le trajet qu'elle vise, lus ensemble. Trajet vaut nil quand
+// le conducteur a supprimé le trajet (UC9) : la réservation reste visible, sans trajet.
+type ReservationAvecTrajet struct {
+	Reservation Reservation
+	Trajet      *Trajet
+}
+
 // Valider vérifie les champs indispensables avant écriture.
 func (r Reservation) Valider() error {
 	if r.Trajet == "" || r.Passager == "" {

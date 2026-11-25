@@ -91,6 +91,18 @@ func (r *reservationsFausses) ParPassager(_ context.Context, passager string) ([
 	return resultat, nil
 }
 
+func (r *reservationsFausses) ParPassagerAvecTrajet(ctx context.Context, passager string) ([]domain.ReservationAvecTrajet, error) {
+	liste, err := r.ParPassager(ctx, passager)
+	if err != nil {
+		return nil, err
+	}
+	paires := make([]domain.ReservationAvecTrajet, 0, len(liste))
+	for _, reservation := range liste {
+		paires = append(paires, domain.ReservationAvecTrajet{Reservation: reservation})
+	}
+	return paires, nil
+}
+
 func (r *reservationsFausses) Annuler(_ context.Context, _ string, _ string, _ time.Time) (domain.Reservation, error) {
 	return domain.Reservation{}, errors.New("annulation non configurée dans ce test")
 }

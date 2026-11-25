@@ -45,6 +45,9 @@ type ReservationRepository interface {
 	Reserver(ctx context.Context, r Reservation) (Reservation, error)
 	// ParPassager liste les réservations d'un passager, de la plus récente à la plus ancienne.
 	ParPassager(ctx context.Context, passager string) ([]Reservation, error)
+	// ParPassagerAvecTrajet fait la même lecture en y joignant le trajet, en une seule requête. Le
+	// trajet vaut nil quand il a été supprimé (UC9).
+	ParPassagerAvecTrajet(ctx context.Context, passager string) ([]ReservationAvecTrajet, error)
 	// Annuler vérifie propriété, état et échéance, puis passe à CANCELLED et rend la place
 	// dans la même transaction. Une répétition ne modifie ni réservation ni compteur.
 	Annuler(ctx context.Context, identifiant, passager string, maintenant time.Time) (Reservation, error)
