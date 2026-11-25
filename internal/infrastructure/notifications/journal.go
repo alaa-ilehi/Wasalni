@@ -44,3 +44,11 @@ func (j *Journal) NotifierSuppressionTrajet(_ context.Context, trajet domain.Tra
 	j.journal.Info("trajet supprimé; notification aux passagers à transmettre par UC12", "trajet", trajet.Identifiant, "conducteur", trajet.Conducteur)
 	return nil
 }
+
+func (j *Journal) NotifierAnnulation(_ context.Context, reservation domain.Reservation) error {
+	j.journal.Info("réservation annulée par le passager",
+		"reservation", reservation.Identifiant,
+		"trajet", reservation.Trajet,
+		"passager", reservation.Passager)
+	return nil
+}

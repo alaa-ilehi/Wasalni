@@ -1,0 +1,59 @@
+@startuml uc5-sequence
+title UC5 - Annuler une réservation
+autonumber
+
+actor "Passager" as Passager
+participant "api.Routes\nDELETE /bookings/{id}" as API
+participant "application.AnnulerReservation" as UC
+participant "Horloge" as Horloge
+participant "domain.ReservationRepository\n(sqlite)" as Reservations
+database "bookings + rides" as DB
+participant "notifications.Journal" as Notif
+
+Passager -> API : DELETE /bookings/{id}\nX-User: alice
+API -> API : identite(X-User)
+alt en-tête absent
+  API --> Passager : 401 identité manquante
+else identité présente
+  API -> UC : Executer("alice", id)
+  UC -> Horloge : Maintenant()
+  Horloge --> UC : maintenant
+  UC -> Reservations : Annuler(id, "alice", maintenant)
+  Reservations -> DB : BEGIN IMMEDIATE
+  Reservations -> DB : lire réservation + trajet
+  alt inconnue ou autre propriétaire
+    Reservations -> DB : ROLLBACK
+    Reservations --> UC : ErrReservationIntrouvable
+    UC --> API : ErrReservationIntrouvable
+    API --> Passager : 404
+  else déjà annulée
+    Reservations -> DB : ROLLBACK
+    Reservations --> UC : ErrReservationDejaAnnulee
+    UC --> API : ErrReservationDejaAnnulee
+    API --> Passager : 409
+  else échéance atteinte
+    Reservations -> DB : ROLLBACK
+    Reservations --> UC : ErrAnnulationHorsDelai
+    UC --> API : ErrAnnulationHorsDelai
+    API --> Passager : 409
+  else annulation autorisée
+    Reservations -> DB : UPDATE bookings SET status = CANCELLED
+    Reservations -> DB : UPDATE rides SET seats_available = seats_available + 1
+    Reservations -> DB : COMMIT
+    Reservations --> UC : Reservation CANCELLED
+    UC -> Notif : NotifierAnnulation(...)
+    note right of UC
+      L'événement est journalisé au mieux.
+      La livraison externe UC12 reste à faire.
+    end note
+    UC --> API : Reservation CANCELLED
+    API --> Passager : 204 No Content
+  end
+end
+
+note over DB
+  Le statut et le compteur de places changent
+  dans la même transaction immédiate. Une seconde
+  annulation voit CANCELLED et ne rend aucune place.
+end note
+@enduml

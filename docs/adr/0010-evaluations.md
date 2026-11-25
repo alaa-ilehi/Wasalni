@@ -33,10 +33,10 @@ coût d'un `AVG`.
   désynchroniser une moyenne ; le doublon est sûr sous appels simultanés.
 - **Négatif :** chaque `GET /rides/{id}` porte un `AVG` supplémentaire ; acceptable à ce volume, avec une seule connexion
   SQLite (ADR 0005).
-- **Dépendance :** UC11 permet au conducteur de terminer le trajet; les tests posent également directement
+- **Dépendance :** UC11 permet au conducteur de terminer le trajet ; les tests posent également directement
   `status = 'COMPLETED'` pour isoler UC6.
-- **Participation :** en l'absence d'UC5, la présence d'une ligne `bookings` — quel que soit son état — atteste de la
-  participation. UC5 précisera si une réservation annulée doit exclure son passager des évaluations.
+- **Participation :** la présence d'une ligne `bookings` — quel que soit son état — atteste de la participation
+  antérieure. Une réservation annulée (UC5) ne retire donc pas le droit d'évaluer.
 
 ## Alternatives écartées
 

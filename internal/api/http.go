@@ -18,7 +18,8 @@ func statutHTTP(err error) int {
 	case errors.Is(err, application.ErrIdentiteManquante):
 		return http.StatusUnauthorized
 	case errors.Is(err, domain.ErrProfilIntrouvable),
-		errors.Is(err, domain.ErrTrajetIntrouvable):
+		errors.Is(err, domain.ErrTrajetIntrouvable),
+		errors.Is(err, domain.ErrReservationIntrouvable):
 		return http.StatusNotFound
 	case errors.Is(err, domain.ErrNonParticipant),
 		errors.Is(err, domain.ErrTrajetNonProprietaire):
@@ -28,6 +29,8 @@ func statutHTTP(err error) int {
 		errors.Is(err, domain.ErrTrajetSupprime),
 		errors.Is(err, domain.ErrTrajetDejaTermine),
 		errors.Is(err, domain.ErrReservationDejaActive),
+		errors.Is(err, domain.ErrReservationDejaAnnulee),
+		errors.Is(err, domain.ErrAnnulationHorsDelai),
 		errors.Is(err, domain.ErrTrajetNonTermine),
 		errors.Is(err, domain.ErrEvaluationDejaFaite):
 		return http.StatusConflict

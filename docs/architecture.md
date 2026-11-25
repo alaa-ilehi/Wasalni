@@ -139,7 +139,10 @@ Toutes les routes sont construites par `api.Routes` (`internal/api/routes.go`). 
 | `GET` | `/rides/{id}` | — | — | `200` trajet + conducteur (`driver`, `rating` renseigné si UC6 a reçu des notes), `404` trajet inconnu ou terminé, `500` erreur inattendue |
 | `POST` | `/rides` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` (`departure` accepté comme alias de `departure_time`) | `201` trajet publié, `400` saisie refusée, `401` identité absente, `413` corps trop volumineux, `500` erreur inattendue |
 | `POST` | `/rides/{id}/bookings` | `X-User` requis | — | `201` réservation `ACTIVE`, `400` conducteur ou trajet invalide, `401` identité absente, `404` trajet inconnu, `409` trajet complet ou réservation déjà active, `500` erreur inattendue |
+| `PUT` | `/rides/{id}` | `X-User` requis | `{origin, destination, departure_time, seats_total, price, cancel_delay_hours}` | `200` trajet modifié, `400` saisie refusée, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
+| `DELETE` | `/rides/{id}` | `X-User` requis | — | `204` trajet supprimé, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` trajet terminé, `500` erreur inattendue |
 | `POST` | `/rides/{id}/complete` | `X-User` requis | — | `200` trajet `COMPLETED`, `401` identité absente, `403` non-propriétaire, `404` trajet inconnu, `409` déjà terminé, `500` erreur inattendue |
+| `DELETE` | `/bookings/{id}` | `X-User` requis | — | `204` annulée, `401` identité absente, `404` réservation inconnue ou non possédée, `409` déjà annulée ou échéance atteinte, `500` erreur inattendue |
 | `POST` | `/rides/{id}/ratings` | `X-User` requis | `{score, target, comment?}` | `201` évaluation créée, `400` note ou commentaire invalide, `401` identité absente, `403` non participant, `404` trajet inconnu, `409` trajet non terminé ou doublon, `500` erreur inattendue |
 
 Corps de requête (`SaisieProfil`) :
@@ -207,6 +210,13 @@ ligne modifiée rend `409`, et un doublon refusé ne coûte pas de place (ADR 00
 
 Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le comportement **livré** : le décrément conditionnel et la clé étrangère y figurent, et leur
 échec respectif rend `409`.
+
+### Annulation UC5
+
+`DELETE /bookings/{id}` vérifie l'identité, le propriétaire, l'état `ACTIVE` et l'échéance `departure - X`. Le dépôt
+annule et rend la place dans la même transaction immédiate. L'événement d'annulation est journalisé au mieux après le
+commit ; l'adaptateur ne réalise pas la livraison aux parties, qui relève du système externe UC12 (ADR 0007).
+Source : [uml/uc5-sequence.puml](uml/uc5-sequence.puml) et fiche [UC5](uc5-cancel-booking.md).
 
 ## 9. Modèle de données
 
@@ -302,9 +312,10 @@ d'utilisation correspondants (§14).
 
 ### Modèle de classes (périmètre implémenté)
 
-Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit les entités, ports, adaptateurs et cas
-d'utilisation livrés pour UC1, UC8 et UC11. Les séquences sont en [UC1](uml/uc1-sequence.puml) et
-[UC11](uml/uc11-sequence.puml). Le diagramme se maintient avec le code : un diagramme
+Source : [uml/class-model.puml](uml/class-model.puml). Le diagramme décrit le **code livré** pour UC8, UC1, UC5 et UC11 :
+entités `Profil`, `Trajet` et `Reservation`, leurs ports et adaptateurs, la validation métier, les cas d'utilisation et les
+routes HTTP. Les séquences sont en [UC1](uml/uc1-sequence.puml), [UC5](uml/uc5-sequence.puml),
+[UC9](uml/uc9-sequence.puml) et [UC11](uml/uc11-sequence.puml). Le diagramme se maintient avec le code : un diagramme
 qui diverge de l'implémentation est un défaut, pas une illustration.
 
 ## 10. Pipeline photo
@@ -393,6 +404,9 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   donnant exactement trois succès, clé étrangère qui refuse une réservation orpheline, migration qui conserve les
   réservations ; intégration HTTP avec un `TrajetRepository` en mémoire et le vrai adaptateur SQLite — `401`, `400`
   conducteur, `404`, `409` complet, `201`, `409` doublon.
+- **Tests d'UC5** : domaine — propriétaire, statut actif, trajet et frontière d'échéance ; application — identité,
+  délégation au dépôt et échec de journalisation sans rollback ; SQLite — place restituée une seule fois, mauvais
+  propriétaire, échéance et appels concurrents ; intégration HTTP/SQLite — `204`, `401`, `404`, `409`, état et compteur.
 - **Tests d'UC11** : domaine — propriétaire et état ; application — identité requise et notification au mieux ; SQLite —
   propriétaire, identifiant inconnu, transition unique et appels concurrents ; HTTP/SQLite — `200`, `401`, `403`, `404`,
   `409`, état persisté et échec de notification sans annulation.
@@ -431,15 +445,14 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 | UC6 | `EvaluerParticipant` (`internal/application/evaluer_participant.go`) | `TrajetRepository`, `ReservationRepository`, `EvaluationRepository` | implémenté : `POST /rides/{id}/ratings`, une note par couple, moyenne lue par UC7 (ADR 0010) |
 | UC11 | `TerminerTrajet` (`internal/application/terminer_trajet.go`) | `TrajetFinRepository`, `NotificateurFinTrajet` | implémenté : `POST /rides/{id}/complete`, transition unique `PUBLISHED` → `COMPLETED` |
 | UC12 | `Notificateur` → `notifications.Journal` | — | partiel : la notification existe côté service, le système externe non (ADR 0007) |
+| UC5 | `AnnulerReservation` (`internal/application/annuler_reservation.go`) | `ReservationRepository`, `Horloge`, `NotificateurAnnulation` | implémenté : `DELETE /bookings/{id}`, annulation et place rendue atomiquement |
 | UC9 | `GererTrajet` (`internal/application/gerer_trajet.go`) | `TrajetGestionRepository` | implémenté : modification et suppression logique, réservations annulées en transaction |
-| UC5, UC10 | — | — | non implémentés |
+| UC10 | — | — | non implémenté (paiement retiré du périmètre, ADR 0003) |
 
 ## 15. Dette et limites connues
 
-- **Annulation absente.** Une réservation `CANCELLED` n'existe que par écriture directe : UC5 n'a ni endpoint ni
-  remise en vente de la place, donc `seats_available` ne remonte jamais.
-- **Livraison externe de la fin de trajet absente.** UC11 journalise l'événement après la transition; l'adaptateur de
-  notification aux passagers reste à réaliser par UC12 (ADR 0007).
+- **Notification externe absente.** UC3, UC5, UC9 et UC11 écrivent un événement dans le journal après commit ; l'envoi
+  effectif reste à implémenter avec le système externe d'UC12 (ADR 0007).
 - **Photos stockées en base.** `users.photo` contient le WebP en base64 : environ un tiers de surcoût par rapport au
   binaire, et l'image entière est relue et retransmise à chaque `GET /profile` comme dans `GET /rides/{id}`. Acceptable
   pour une photo par profil, à revoir si le volume grandit (ADR 0008).
@@ -454,8 +467,8 @@ curl -s -X PUT -H 'X-User: amine' -H 'Content-Type: application/json' \
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Huit UC couverts.** UC8, UC1, UC2, UC7, UC3, UC6, UC9 et UC11 ont du code et des tests ; UC13 et UC12 restent partiels
-  (identité non vérifiée, journal au lieu d'un système de notification). UC5 et UC10 restent à faire.
+- **Neuf UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9 et UC11 ont du code et des tests ; UC13 et UC12 restent
+  partiels (identité non vérifiée, journal au lieu d'un système de notification). UC10 reste à faire.
 
 ## 16. Décisions (ADR)
 

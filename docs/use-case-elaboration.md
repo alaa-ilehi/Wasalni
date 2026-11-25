@@ -85,6 +85,8 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
 
 ## UC5 - Annuler une réservation
 
+Fiche d'implémentation : [uc5-cancel-booking.md](uc5-cancel-booking.md).
+
 - **Acteur :** Passager. **Inclut :** UC12 (notification).
 - **Préconditions :** le passager a une réservation active.
 - **Postconditions :** la réservation est annulée et la place est libre.

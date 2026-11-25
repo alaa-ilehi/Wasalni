@@ -20,6 +20,7 @@ type Deps struct {
 	Trajets        application.PublierTrajet
 	Details        application.ConsulterTrajet
 	Reservations   application.ReserverPlace
+	Annulations    application.AnnulerReservation
 	Terminaisons   application.TerminerTrajet
 	GestionTrajets application.GererTrajet
 	Evaluations    application.EvaluerParticipant
@@ -40,6 +41,7 @@ func Routes(deps Deps) http.Handler {
 	mux.HandleFunc("POST /rides/{id}/complete", terminerTrajet(deps.Terminaisons))
 	mux.HandleFunc("PUT /rides/{id}", modifierTrajet(deps.GestionTrajets))
 	mux.HandleFunc("DELETE /rides/{id}", supprimerTrajet(deps.GestionTrajets))
+	mux.HandleFunc("DELETE /bookings/{id}", annulerReservation(deps.Annulations))
 	mux.HandleFunc("POST /rides/{id}/ratings", enregistrerEvaluation(deps.Evaluations))
 	return mux
 }
@@ -334,5 +336,21 @@ func reserverPlace(reserver application.ReserverPlace) http.HandlerFunc {
 			return
 		}
 		repondreJSON(w, http.StatusCreated, reservationVersJSON(reservation))
+	}
+}
+
+// annulerReservation : DELETE /bookings/{id}, annule la réservation de l'acteur identifié.
+func annulerReservation(annuler application.AnnulerReservation) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acteur, err := identite(r)
+		if err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		if _, err := annuler.Executer(r.Context(), acteur, r.PathValue("id")); err != nil {
+			repondreErreur(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

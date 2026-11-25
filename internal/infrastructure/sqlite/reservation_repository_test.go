@@ -49,13 +49,14 @@ func (b banc) compter(t *testing.T, requete string, args ...any) int {
 func (b banc) trajetPublie(t *testing.T, places int) string {
 	t.Helper()
 	cree, err := b.trajets.Publier(context.Background(), domain.Trajet{
-		Conducteur:  "bob",
-		Origine:     "Lyon",
-		Destination: "Grenoble",
-		Depart:      time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC),
-		PlacesTotal: places,
-		Places:      places,
-		Statut:      domain.TrajetPublie,
+		Conducteur:      "bob",
+		Origine:         "Lyon",
+		Destination:     "Grenoble",
+		Depart:          time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC),
+		PlacesTotal:     places,
+		Places:          places,
+		DelaiAnnulation: 2 * time.Hour,
+		Statut:          domain.TrajetPublie,
 	})
 	if err != nil {
 		t.Fatalf("publication du trajet : %v", err)
@@ -103,6 +104,109 @@ func TestReserverConsommeUnePlace(t *testing.T) {
 	}
 	if places := b.placesLibres(t, trajet); places != 2 {
 		t.Errorf("places disponibles = %d, attendu 2", places)
+	}
+}
+
+func TestAnnulerReservationLibereUnePlaceEtInterditLeDoublon(t *testing.T) {
+	b := nouveauBanc(t)
+	trajet := b.trajetPublie(t, 2)
+	reservation, err := reserver(t, b, trajet, "alice")
+	if err != nil {
+		t.Fatalf("réservation : %v", err)
+	}
+	maintenant := time.Date(2026, 12, 1, 5, 0, 0, 0, time.UTC)
+
+	annulee, err := b.reservations.Annuler(context.Background(), reservation.Identifiant, "alice", maintenant)
+	if err != nil {
+		t.Fatalf("annulation : %v", err)
+	}
+	if annulee.Statut != domain.ReservationAnnulee || annulee.Identifiant != reservation.Identifiant {
+		t.Errorf("réservation annulée = %+v", annulee)
+	}
+	if places := b.placesLibres(t, trajet); places != 2 {
+		t.Errorf("places après annulation = %d, attendu 2", places)
+	}
+
+	if _, err := b.reservations.Annuler(context.Background(), reservation.Identifiant, "alice", maintenant); !errors.Is(err, domain.ErrReservationDejaAnnulee) {
+		t.Fatalf("seconde annulation : erreur = %v, attendu ErrReservationDejaAnnulee", err)
+	}
+	if places := b.placesLibres(t, trajet); places != 2 {
+		t.Errorf("places après seconde annulation = %d, attendu 2", places)
+	}
+}
+
+func TestAnnulerReservationRefuseProprietaireInconnuEtEcheance(t *testing.T) {
+	maintenant := time.Date(2026, 12, 1, 6, 0, 0, 0, time.UTC) // départ - délai (2 h)
+	for _, cas := range []struct {
+		nom      string
+		passager string
+		attendu  error
+	}{
+		{"autre passager", "bob", domain.ErrReservationIntrouvable},
+		{"échéance atteinte", "alice", domain.ErrAnnulationHorsDelai},
+	} {
+		t.Run(cas.nom, func(t *testing.T) {
+			b := nouveauBanc(t)
+			trajet := b.trajetPublie(t, 2)
+			reservation, err := reserver(t, b, trajet, "alice")
+			if err != nil {
+				t.Fatalf("réservation : %v", err)
+			}
+			_, err = b.reservations.Annuler(context.Background(), reservation.Identifiant, cas.passager, maintenant)
+			if !errors.Is(err, cas.attendu) {
+				t.Fatalf("annulation : erreur = %v, attendu %v", err, cas.attendu)
+			}
+			if places := b.placesLibres(t, trajet); places != 1 {
+				t.Errorf("places après refus = %d, attendu 1", places)
+			}
+		})
+	}
+}
+
+func TestAnnulationsConcurrentesNeLiberentQuUnePlace(t *testing.T) {
+	b := nouveauBanc(t)
+	trajet := b.trajetPublie(t, 1)
+	reservation, err := reserver(t, b, trajet, "alice")
+	if err != nil {
+		t.Fatalf("réservation : %v", err)
+	}
+
+	const appels = 8
+	var (
+		verrou       sync.Mutex
+		succes       int
+		dejaAnnulees int
+		inattendus   []error
+		debut        = make(chan struct{})
+		groupe       sync.WaitGroup
+	)
+	maintenant := time.Date(2026, 12, 1, 5, 0, 0, 0, time.UTC)
+	for i := 0; i < appels; i++ {
+		groupe.Add(1)
+		go func() {
+			defer groupe.Done()
+			<-debut
+			_, err := b.reservations.Annuler(context.Background(), reservation.Identifiant, "alice", maintenant)
+			verrou.Lock()
+			defer verrou.Unlock()
+			switch {
+			case err == nil:
+				succes++
+			case errors.Is(err, domain.ErrReservationDejaAnnulee):
+				dejaAnnulees++
+			default:
+				inattendus = append(inattendus, err)
+			}
+		}()
+	}
+	close(debut)
+	groupe.Wait()
+
+	if len(inattendus) != 0 || succes != 1 || dejaAnnulees != appels-1 {
+		t.Fatalf("succès = %d, déjà annulées = %d, erreurs inattendues = %v", succes, dejaAnnulees, inattendus)
+	}
+	if places := b.placesLibres(t, trajet); places != 1 {
+		t.Errorf("places = %d, attendu 1", places)
 	}
 }
 
