@@ -9,7 +9,8 @@
 
 Le conducteur doit être propriétaire du trajet. Un trajet inconnu ou supprimé renvoie `404`, un autre propriétaire `403`, un trajet terminé `409`. Une modification dont `seats_total` est inférieur au nombre de réservations actives renvoie `409`; les places disponibles deviennent `seats_total - réservations actives`. Les champs sont validés selon les règles de publication, notamment la date et le délai d'annulation. Modifier `cancel_delay_hours` met donc à jour le délai applicable aux réservations conservées.
 
-La suppression garde la ligne `rides` et les lignes `bookings` pour préserver les clés étrangères et l'historique. Elle pose `deleted_at` et annule les réservations actives dans une transaction. L'insertion de nouvelles réservations est conditionnée à un trajet publié et non supprimé.
+La suppression garde la ligne `rides` et les lignes `bookings` pour préserver les clés étrangères et l'historique
+(ADR 0012). Elle pose `deleted_at` et annule les réservations actives dans une transaction. L'insertion de nouvelles réservations est conditionnée à un trajet publié et non supprimé.
 
 Les notifications de modification/suppression sont journalisées après commit au mieux. Leur livraison effective est externe et relève d'UC12 (ADR 0007).
 

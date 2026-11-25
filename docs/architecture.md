@@ -228,7 +228,29 @@ Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le
 `DELETE /bookings/{id}` vérifie l'identité, le propriétaire, l'état `ACTIVE` et l'échéance `departure - X`. Le dépôt
 annule et rend la place dans la même transaction immédiate. L'événement d'annulation est journalisé au mieux après le
 commit ; l'adaptateur ne réalise pas la livraison aux parties, qui relève du système externe UC12 (ADR 0007).
+![Séquence UC5](uml/uc5-sequence.png)
+
 Source : [uml/uc5-sequence.puml](uml/uc5-sequence.puml) et fiche [UC5](uc5-cancel-booking.md).
+
+### Gestion UC9
+
+`PUT /rides/{id}` et `DELETE /rides/{id}` vérifient l'identité, la propriété et l'état du trajet. Une modification
+recompte les réservations actives avant de fixer les places disponibles ; une suppression annule ces réservations et
+pose `deleted_at` dans la même transaction (ADR 0012). Les deux événements sont journalisés au mieux après le commit,
+la livraison relevant d'UC12 (ADR 0007).
+
+![Séquence UC9](uml/uc9-sequence.png)
+
+Source : [uml/uc9-sequence.puml](uml/uc9-sequence.puml) et fiche [UC9](uc9-edit-ride.md).
+
+### Terminaison UC11
+
+`POST /rides/{id}/complete` fait passer le trajet de `PUBLISHED` à `COMPLETED`, transition définitive et idempotente :
+une seconde demande rend `409`. L'événement part vers le notificateur après le commit, au mieux.
+
+![Séquence UC11](uml/uc11-sequence.png)
+
+Source : [uml/uc11-sequence.puml](uml/uc11-sequence.puml) et fiche [UC11](uc11-complete-ride.md).
 
 ## 9. Modèle de données
 
@@ -333,6 +355,8 @@ Invariants portés par le schéma ou par le domaine :
   seats_available > 0` qui ne modifie aucune ligne vaut `domain.ErrTrajetComplet` et annule la transaction (ADR 0004).
   Il remonte d'une unité par annulation (UC5) et, à la suppression d'un trajet (UC9), du nombre de réservations
   effectivement annulées : « places + réservations actives = places totales » vaut aussi sur une ligne supprimée.
+- La suppression d'un trajet est **logique** : `rides.deleted_at` porte l'horodatage, la ligne et ses réservations
+  restent pour l'historique, et les lectures publiques filtrent la colonne (ADR 0012).
 - `bookings.ride_id` référence `rides(id)` : une réservation orpheline est refusée par la base, en plus du trajet
   obligatoirement lu par le cas d'usage.
 - `ratings.score` est borné à 1–5 et l'index `ratings_unique` interdit un second avis pour le même couple
@@ -426,6 +450,8 @@ correspondance est la responsabilité de l'adaptateur (`internal/api/http.go`, A
 | `domain.ErrReservationDejaActive` | domaine, traduite depuis la violation d'index unique | 409 |
 | `domain.ErrConducteurNePeutPasReserver` | cas d'usage `ReserverPlace` | 400 |
 | `domain.ErrTrajetInvalide` | domaine (`Trajet.Valider`, `Reservation.Valider`) | 400 |
+| `domain.ErrCurseurInvalide` | domaine, rendue par l'adaptateur SQLite sur un curseur `after` illisible ou mal formé | 400 |
+| `application.ErrImageTropGrande` | application (traduit `photos.ErrImageTropGrande` : budget de pixels dépassé) | 400 |
 | corps JSON invalide ou champ inconnu | adaptateur HTTP | 400 |
 | corps supérieur à 10 Mio | adaptateur HTTP (`http.MaxBytesReader`) | 413 |
 | toute autre erreur | infrastructure | 500, journalisée, message générique |
@@ -564,3 +590,4 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 | [0009](adr/0009-choix-go.md) | Go avec `net/http`, `database/sql` et `modernc.org/sqlite` | accepté |
 | [0010](adr/0010-evaluations.md) | Évaluations en table dédiée, moyenne calculée à la lecture et exposée par UC7 | appliqué |
 | [0011](adr/0011-authentification-sessions.md) | Authentification par session : jetons opaques hachés en base, mots de passe PBKDF2 salés en bibliothèque standard, jeton Bearer sur toutes les routes sauf `/health` et `/auth/*` | appliqué |
+| [0012](adr/0012-suppression-logique-trajets.md) | Suppression logique des trajets : `rides.deleted_at`, lectures publiques filtrées, réservations annulées et places rendues dans la même transaction | appliqué |

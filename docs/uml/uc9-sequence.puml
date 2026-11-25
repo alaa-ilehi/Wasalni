@@ -5,9 +5,10 @@ participant API
 participant GererTrajet
 participant TrajetRepository
 database SQLite
+participant "notifications.Journal" as Notif
 
-Conducteur -> API: PUT /rides/{id} ou DELETE /rides/{id}
-API -> API: vérifier le jeton (sessions)
+Conducteur -> API: PUT /rides/{id} ou DELETE /rides/{id}\nAuthorization: Bearer <jeton>
+API -> API: Resoudre(jeton)\n401 si absent ou expiré
 API -> GererTrajet: Modifier(...) / Supprimer(...)
 GererTrajet -> TrajetRepository: vérifier propriétaire et état
 TrajetRepository -> SQLite: BEGIN
@@ -19,6 +20,11 @@ else suppression
   TrajetRepository -> SQLite: poser deleted_at
 end
 TrajetRepository -> SQLite: COMMIT
+GererTrajet -> Notif: NotifierModificationTrajet(...) / NotifierSuppressionTrajet(...)
+note right of GererTrajet
+  Événement journalisé au mieux après commit,
+  livré par UC12 si une URL est configurée (ADR 0007).
+end note
 GererTrajet --> API: résultat
 API --> Conducteur: 200 trajet modifié / 204 supprimé
 @enduml
