@@ -38,7 +38,7 @@ func bancAnnulation(t *testing.T, maintenant time.Time) (*httptest.Server, *sql.
 	uc := application.NouveauAnnulerReservation(depot, horlogeAnnulationFigee{maintenant}, notificateurAnnulationHTTP{
 		erreur: errors.New("service de notification indisponible"),
 	})
-	serveur := httptest.NewServer(api.Routes(api.Deps{Annulations: uc}))
+	serveur := httptest.NewServer(api.Routes(api.Deps{Authentification: identitePartagee.auth, Annulations: uc}))
 	t.Cleanup(serveur.Close)
 	return serveur, db
 }
@@ -70,7 +70,7 @@ func supprimerReservation(t *testing.T, serveur *httptest.Server, id, acteur str
 		t.Fatalf("requête : %v", err)
 	}
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {

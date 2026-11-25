@@ -7,7 +7,7 @@
 ## Scénario nominal
 
 1. L'utilisateur ouvre un trajet terminé depuis UC10.
-2. Il envoie `POST /rides/{id}/ratings` avec `X-User`, un `score` de 1 à 5, la `target` et un `comment` facultatif.
+2. Il envoie `POST /rides/{id}/ratings` avec son jeton de session, un `score` de 1 à 5, la `target` et un `comment` facultatif.
 3. Le système vérifie le trajet terminé et la participation des deux parties.
 4. Le système enregistre l'évaluation ; l'index unique refuse un second dépôt pour le même couple.
 5. Le système répond `201 Created`.

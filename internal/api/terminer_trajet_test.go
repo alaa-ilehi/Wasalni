@@ -36,7 +36,7 @@ func TestTerminerTrajetHTTPSQLite(t *testing.T) {
 	depot := sqlite.NouveauTrajetRepository(db)
 	notif := &notificateurFinTrajetTest{err: errors.New("UC12 indisponible")}
 	uc := application.NouveauTerminerTrajet(depot, notif)
-	serveur := httptest.NewServer(api.Routes(api.Deps{Terminaisons: uc}))
+	serveur := httptest.NewServer(api.Routes(api.Deps{Authentification: identitePartagee.auth, Terminaisons: uc}))
 	defer serveur.Close()
 
 	creer := func() domain.Trajet {
@@ -57,7 +57,7 @@ func TestTerminerTrajetHTTPSQLite(t *testing.T) {
 			t.Fatalf("créer la requête : %v", err)
 		}
 		if acteur != "" {
-			requete.Header.Set(api.EnTeteIdentite, acteur)
+			requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 		}
 		reponse, err := http.DefaultClient.Do(requete)
 		if err != nil {

@@ -1,8 +1,8 @@
 # UC9 — Modifier ou supprimer un trajet publié
 
 - **Acteur :** conducteur propriétaire. **Précondition :** trajet publié et non supprimé.
-- **Modifier :** `PUT /rides/{id}` avec `X-User` et les champs éditables du trajet.
-- **Supprimer :** `DELETE /rides/{id}` avec `X-User`.
+- **Modifier :** `PUT /rides/{id}` avec un jeton de session et les champs éditables du trajet.
+- **Supprimer :** `DELETE /rides/{id}` avec un jeton de session.
 - **Postconditions :** les modifications et le recalcul des places sont atomiques. Une suppression logique conserve les références historiques, annule dans la même transaction les réservations actives et retire le trajet des recherches et consultations.
 
 ## Règles
@@ -16,7 +16,7 @@ Les notifications de modification/suppression sont journalisées après commit a
 ## Séquence nominale
 
 1. Le conducteur envoie la modification complète ou demande la suppression.
-2. L'API authentifie `X-User`; le cas d'utilisation et le dépôt vérifient le propriétaire et l'état.
+2. L'API authentifie le jeton, puis le cas d'utilisation et le dépôt vérifient le propriétaire et l'état.
 3. Pour une modification, le dépôt compte les réservations actives, valide la capacité et écrit les champs et les places disponibles dans une transaction.
 4. Pour une suppression, le dépôt annule les réservations actives et marque le trajet supprimé dans une transaction.
 5. L'API répond `200` avec le trajet modifié ou `204` après suppression.

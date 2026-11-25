@@ -71,7 +71,7 @@ seats_total, seats_available, price) VALUES (?, 'bob', 'Lyon', 'Grenoble', '2026
 		sqlite.NouveauReservationRepository(db),
 		notificateurMuet{},
 	)
-	serveur := httptest.NewServer(api.Routes(api.Deps{Reservations: reserver}))
+	serveur := httptest.NewServer(api.Routes(api.Deps{Authentification: identitePartagee.auth, Reservations: reserver}))
 	t.Cleanup(serveur.Close)
 	return serveur
 }
@@ -83,7 +83,7 @@ func postReservation(t *testing.T, serveur *httptest.Server, trajet, acteur stri
 		t.Fatalf("requête : %v", err)
 	}
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {

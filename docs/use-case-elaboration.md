@@ -24,7 +24,7 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
 | Utilisateur | abstrait | identité commune : profil, évaluations, historique |
 | Conducteur | principal (`Utilisateur`) | publie, modifie, supprime et termine des trajets |
 | Passager | principal (`Utilisateur`) | recherche, réserve, annule, évalue |
-| Système d'authentification | secondaire (externe) | fournit l'identité de `X-User` |
+| Système d'authentification | secondaire (intégré depuis UC13) | délivre les sessions ; le service porte les comptes (ADR 0011) |
 | Système de notification | secondaire (externe) | livre les messages aux deux parties |
 
 ## Liste des cas d'utilisation
@@ -49,7 +49,7 @@ Source : [docs/uml/usecases.puml](uml/usecases.puml).
 ## UC1 - Publier un trajet
 
 - **Acteur :** Conducteur. **Inclut :** UC12 (notification).
-- **Préconditions :** l'utilisateur est identifié (`X-User`) et agit comme conducteur.
+- **Préconditions :** l'utilisateur est identifié (jeton de session) et agit comme conducteur.
 - **Postconditions :** le trajet existe avec origine, destination, heure de départ, places, prix et délai `X` ; le conducteur en est le propriétaire.
 - **Scénario nominal :**
   1. Le conducteur soumet l'origine, la destination, l'heure de départ, les places, le prix et `X`.
@@ -177,13 +177,14 @@ Fiche d'implémentation : [uc11-complete-ride.md](uc11-complete-ride.md).
 ## UC13 - S'authentifier
 
 - **Acteur :** Utilisateur. **Secondaire :** Système d'authentification (externe).
-- **Postconditions :** l'utilisateur possède une identité que l'application accepte via `X-User`.
+- **Postconditions :** l'utilisateur possède un compte et un jeton de session que l'application accepte.
 - **Scénario nominal :**
   1. L'utilisateur soumet ses identifiants au système d'authentification.
   2. Celui-ci les valide et renvoie un jeton.
-  3. Le client transmet cette identité dans `X-User` à chaque appel.
+  3. Le client présente ce jeton dans `Authorization: Bearer …` à chaque appel.
 - **Scénarios alternatifs :** A1 identifiants invalides -> `401` ; A2 identité absente ou expirée -> `401`.
-- **Règles métier :** l'application ne stocke aucun mot de passe et n'émet aucun jeton ; `X-User` est l'identité de confiance fournie par le système externe.
+- **Règles métier :** l'application stocke le mot de passe **haché** (PBKDF2-HMAC-SHA256, sel aléatoire par compte) et
+  n'émet que des jetons opaques, conservés hachés en base, valables 24 h ; aucune identité n'est crue sur parole (ADR 0011).
 
 ## Points à clarifier
 

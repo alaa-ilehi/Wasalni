@@ -1,7 +1,17 @@
 # ADR 0002 - Identité fournie par un système externe, lue dans l'adaptateur HTTP
 
-- **Statut :** accepté (révisé lors du portage en Go)
+- **Statut :** révisé par [ADR 0011](0011-authentification-sessions.md) — la lecture de l'identité reste dans l'adaptateur
+  HTTP, mais la preuve d'identité est désormais une session (UC13)
 - **Date :** 2026-11-24
+
+## Révision (2026-11-25)
+
+Les décisions de cadrage restent valables : l'identité est lue dans l'adaptateur HTTP, elle n'est pas un port du domaine,
+elle est passée explicitement aux cas d'utilisation sous forme de chaîne, et le `401` reste produit par la table
+`statutHTTP`. Ce qui change : **« aucune authentification applicative » n'est plus vrai**. L'en-tête `X-User` croyait le
+client sur parole ; l'ADR 0011 le remplace par un jeton de session (`Authorization: Bearer …`) vérifié en base, avec
+mots de passe hachés (PBKDF2-HMAC-SHA256, sel par compte) et trois routes `/auth/*`. Toute mention ci-dessous d'un
+en-tête de confiance est donc historique.
 
 ## Contexte
 

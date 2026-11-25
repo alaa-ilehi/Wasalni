@@ -43,11 +43,12 @@ func bancTrajets(t *testing.T) *httptest.Server {
 		notificateurMuet{},
 	)
 	serveur := httptest.NewServer(api.Routes(api.Deps{
-		Profils:      application.NouveauGererProfil(profils, adaptateurPhoto{}),
-		Recherches:   rechercher,
-		Trajets:      publier,
-		Details:      consulter,
-		Reservations: reserver,
+		Authentification: identitePartagee.auth,
+		Profils:          application.NouveauGererProfil(profils, adaptateurPhoto{}),
+		Recherches:       rechercher,
+		Trajets:          publier,
+		Details:          consulter,
+		Reservations:     reserver,
 	}))
 	t.Cleanup(serveur.Close)
 	return serveur
@@ -61,7 +62,7 @@ func posterTrajet(t *testing.T, serveur *httptest.Server, acteur, corps string) 
 	}
 	requete.Header.Set("Content-Type", "application/json")
 	if acteur != "" {
-		requete.Header.Set(api.EnTeteIdentite, acteur)
+		requete.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 	}
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
@@ -86,8 +87,27 @@ func TestPublierTrajetSansIdentite(t *testing.T) {
 	if statut != http.StatusUnauthorized {
 		t.Fatalf("statut = %d, attendu 401 (corps %v)", statut, corps)
 	}
-	if corps["error"] != "identité manquante" {
-		t.Errorf("erreur = %v, attendu « identité manquante »", corps["error"])
+	if corps["error"] != "session absente, inconnue ou expirée" {
+		t.Errorf("erreur = %v, attendu le refus de session", corps["error"])
+	}
+}
+
+// L'en-tête de confiance d'avant UC13 ne vaut plus rien : seul un jeton de session identifie l'acteur.
+func TestPublierTrajetRefuseLEnTeteDeConfiance(t *testing.T) {
+	serveur := bancTrajets(t)
+	requete, err := http.NewRequest(http.MethodPost, serveur.URL+"/rides", strings.NewReader(corpsTrajetValide()))
+	if err != nil {
+		t.Fatalf("requête : %v", err)
+	}
+	requete.Header.Set("Content-Type", "application/json")
+	requete.Header.Set("X-User", "amine")
+	reponse, err := http.DefaultClient.Do(requete)
+	if err != nil {
+		t.Fatalf("appel : %v", err)
+	}
+	defer reponse.Body.Close()
+	if reponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("statut = %d, attendu 401 avec X-User seul", reponse.StatusCode)
 	}
 }
 

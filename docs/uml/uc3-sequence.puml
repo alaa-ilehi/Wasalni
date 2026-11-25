@@ -11,8 +11,8 @@ database "rides\n(seats_available)" as Rides
 database "bookings\n+ index unique partiel\n+ clé étrangère rides(id)" as DB
 participant "Notifications\n(port Notificateur)" as Notif
 
-Passager -> API : POST /rides/{id}/bookings\nX-User: alice
-API -> API : identite(X-User)
+Passager -> API : POST /rides/{id}/bookings\nAuthorization: Bearer <jeton>
+API -> API : Resoudre(jeton)
 alt en-tête absent
   API --> Passager : 401 identité manquante
 end

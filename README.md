@@ -4,14 +4,28 @@
 **Système choisi :** plateforme de covoiturage interurbain (API web).
 **Nombre de UC :** 12, dont un à risque technique (réservation concurrente : UC3).
 **Stack :** Go + SQLite (bibliothèque standard et `modernc.org/sqlite`, sans cgo).
-**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC6 (évaluer) et UC11 (terminer un trajet) sont livrés.
+**État actuel :** UC8 (profil), UC1 (publier), UC2 (rechercher), UC7 (détails), UC3 (réserver), UC6 (évaluer), UC11 (terminer un trajet) et UC13 (s'authentifier) sont livrés.
 UC3 consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans surréservation possible
 (ADR 0004) ; `bookings.ride_id` référence `rides(id)`. UC6 enregistre une note par couple sur un trajet terminé et alimente
-`driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. La photo de profil est
+`driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. UC13 remplace l'en-tête de
+confiance `X-User` par une session : mots de passe hachés en PBKDF2-HMAC-SHA256 avec un sel aléatoire par compte, jeton
+opaque rendu une seule fois et conservé haché, `Authorization: Bearer` exigé sur toutes les routes sauf `/health` et
+`/auth/*` (ADR 0011). La photo de profil est
 réencodée en **WebP sans perte** de 512 px et 512 Kio au plus, au-delà d'un budget de
 pixels qui refuse les bombes de décompression (ADR 0008).
 
 Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go vet` et un contrôle `gofmt`).
+
+```bash
+go run ./cmd/wasalni                                   # écoute sur :8080, base wasalni.db
+# 1. s'inscrire : le jeton n'est rendu qu'ici, une seule fois
+JETON=$(curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' \
+        localhost:8080/auth/register | sed -E 's/.*"token":"([^"]+)".*/\1/')
+# 2. appeler une route protégée (toutes le sont, sauf /health et /auth/*)
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/rides
+# 3. fermer la session
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JETON" localhost:8080/auth/session
+```
 
 Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC, priorisation, plan),
 [docs/use-case-elaboration.md](docs/use-case-elaboration.md) (fiches détaillées, diagramme de cas d'utilisation) et
@@ -26,7 +40,7 @@ Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC
 - **Problème :** les conducteurs roulent avec des places vides alors que les passagers peinent à trouver un transport interurbain fiable et abordable.
 - **Utilisateurs :** conducteurs et passagers — deux rôles qu'un utilisateur identifié peut occuper sur différents trajets.
 - **Valeur :** publier ou trouver un trajet en quelques clics et retenir une place.
-- **Périmètre :** API web simple, une seule plateforme, trajets interurbains uniquement, identité fournie par un système d'authentification externe (en-tête `X-User`). L'interface utilisateur est entièrement en français.
+- **Périmètre :** API web simple, une seule plateforme, trajets interurbains uniquement, identité prouvée par une session délivrée par le service (`Authorization: Bearer`), après inscription ou connexion. L'interface utilisateur est entièrement en français.
 - **Succès :** aucun trajet surréservé ; chaque réservation est soit active, soit libérée avant l'échéance définie par le conducteur.
 
 ### Acteurs
@@ -36,7 +50,7 @@ Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC
 | Utilisateur | abstrait (généralisation) | rôle commun : profil, évaluations et historique des trajets |
 | Conducteur | principal (`Utilisateur`) | publie, modifie, supprime et termine des trajets |
 | Passager | principal (`Utilisateur`) | recherche, réserve, annule une réservation, évalue |
-| Système d'authentification | secondaire (externe) | fournit l'identité transportée dans `X-User` |
+| Système d'authentification | secondaire (intégré depuis UC13) | délivre les sessions ; le service porte lui-même les comptes (ADR 0011) |
 | Système de notification | secondaire (externe) | informe les deux parties des changements de statut |
 
 ---
@@ -56,7 +70,7 @@ Documents de référence : [docs/vision.md](docs/vision.md) (vision, acteurs, UC
 | UC10 | Voir mes trajets / réservations | point d'entrée pour annuler et évaluer |
 | UC11 | Terminer un trajet | le conducteur marque le trajet terminé ; débloque UC6 |
 | UC12 | Recevoir des notifications | système de notification externe ; livraison au mieux |
-| UC13 | S'authentifier | système d'authentification externe ; source de `X-User` |
+| UC13 | S'authentifier | inscription, connexion, déconnexion ; jeton `Authorization: Bearer` (ADR 0011) |
 
 La réservation (UC3) et l'annulation (UC5) sont deux UC distincts : UC3 retient la place, UC5 la libère.
 

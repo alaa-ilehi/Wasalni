@@ -9,8 +9,8 @@ participant "Horloge\n(port application)" as Horloge
 participant "domain.TrajetRepository\n(sqlite.TrajetRepository)" as Trajets
 database "rides" as DB
 
-Conducteur -> API : POST /rides\nX-User: bob\n{origin, destination, departure_time, seats_total, price, cancel_delay_hours?}
-API -> API : identite(X-User)
+Conducteur -> API : POST /rides\nAuthorization: Bearer <jeton>\n{origin, destination, departure_time, seats_total, price, cancel_delay_hours?}
+API -> API : Resoudre(jeton)
 alt en-tête absent
   API --> Conducteur : 401 identité manquante
 else identité reçue

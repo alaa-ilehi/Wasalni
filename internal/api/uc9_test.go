@@ -28,7 +28,7 @@ func TestUC9HTTPModifierEtSupprimer(t *testing.T) {
 	defer db.Close()
 	trajets, reservations := sqlite.NouveauTrajetRepository(db), sqlite.NouveauReservationRepository(db)
 	uc := application.NouveauGererTrajet(trajets, trajets, horlogeUC9{})
-	handler := api.Routes(api.Deps{GestionTrajets: uc})
+	handler := api.Routes(api.Deps{Authentification: identitePartagee.auth, GestionTrajets: uc})
 	cree, err := trajets.Publier(ctx, domain.Trajet{Conducteur: "bob", Origine: "Lyon", Destination: "Grenoble", Depart: time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC), PlacesTotal: 2, Places: 2, Statut: domain.TrajetPublie})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestUC9HTTPModifierEtSupprimer(t *testing.T) {
 	faire := func(method, body, acteur string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "/rides/"+cree.Identifiant, strings.NewReader(body))
 		if acteur != "" {
-			r.Header.Set(api.EnTeteIdentite, acteur)
+			r.Header.Set(api.EnTeteAutorisation, autorisationDe(t, acteur))
 		}
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)

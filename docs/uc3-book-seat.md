@@ -1,7 +1,7 @@
 # UC3 - Réserver une place
 
 - **Acteur principal :** Passager  **Acteur secondaire :** Système de notification
-- **Préconditions :** le trajet existe (l'utilisateur est identifié par l'en-tête `X-User`).
+- **Préconditions :** le trajet existe (l'utilisateur est identifié par un jeton de session).
 - **Postconditions (succès) :** une place est retenue ; une réservation `ACTIVE` existe ; le passager est notifié (UC12).
 
 ## Scénario nominal

@@ -10,8 +10,8 @@ participant "domain.ReservationRepository\n(sqlite)" as Reservations
 database "bookings + rides" as DB
 participant "notifications.Journal" as Notif
 
-Passager -> API : DELETE /bookings/{id}\nX-User: alice
-API -> API : identite(X-User)
+Passager -> API : DELETE /bookings/{id}\nAuthorization: Bearer <jeton>
+API -> API : Resoudre(jeton)
 alt en-tête absent
   API --> Passager : 401 identité manquante
 else identité présente

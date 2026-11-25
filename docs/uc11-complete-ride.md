@@ -8,7 +8,7 @@ Séquence : [uml/uc11-sequence.puml](uml/uc11-sequence.puml). Modèle de classes
 
 ## Scénario nominal
 
-1. Le conducteur appelle `POST /rides/{id}/complete` avec `X-User`.
+1. Le conducteur appelle `POST /rides/{id}/complete` avec son jeton de session.
 2. L'API vérifie l'identité et délègue au cas d'utilisation UC11.
 3. Le dépôt vérifie le propriétaire et l'état, puis effectue la transition `PUBLISHED` vers `COMPLETED` dans une transaction.
 4. Après commit, l'événement de fin est journalisé au mieux; l'API répond `200` avec le trajet terminé.

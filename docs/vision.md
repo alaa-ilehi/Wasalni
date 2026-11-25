@@ -3,7 +3,7 @@
 **Problème :** les conducteurs roulent avec des places vides alors que les passagers peinent à trouver un transport interurbain fiable et abordable.
 **Utilisateurs :** conducteurs et passagers — deux rôles qu'un utilisateur identifié peut occuper sur différents trajets.
 **Valeur :** publier ou trouver un trajet en quelques clics et retenir une place.
-**Périmètre :** API web simple, une seule plateforme, trajets interurbains uniquement, identité fournie par un système d'authentification externe (en-tête `X-User`). L'interface utilisateur est entièrement en français.
+**Périmètre :** API web simple, une seule plateforme, trajets interurbains uniquement, identité prouvée par une session délivrée par le service (`Authorization: Bearer`), après inscription ou connexion. L'interface utilisateur est entièrement en français.
 **Succès :** aucun trajet surréservé ; chaque réservation est soit active, soit libérée avant l'échéance définie par le conducteur.
 
 ## Acteurs
@@ -12,7 +12,7 @@
 | Utilisateur | abstrait (généralisation) | rôle commun : profil, évaluations et historique des trajets |
 | Conducteur | principal (`Utilisateur`) | publie, modifie, supprime et termine des trajets |
 | Passager | principal (`Utilisateur`) | recherche, réserve, annule une réservation, évalue |
-| Système d'authentification | secondaire (externe) | fournit l'identité transportée dans `X-User` |
+| Système d'authentification | secondaire (intégré depuis UC13) | délivre les sessions ; le service porte les comptes (ADR 0011) |
 | Système de notification | secondaire (externe) | informe les deux parties des changements de statut |
 
 ## Cas d'utilisation
@@ -29,7 +29,7 @@
 | UC10 | Voir mes trajets / réservations | point d'entrée pour annuler et évaluer |
 | UC11 | Terminer un trajet | le conducteur marque le trajet comme terminé ; débloque UC6 |
 | UC12 | Recevoir des notifications | système de notification externe ; livraison au mieux |
-| UC13 | S'authentifier | système d'authentification externe ; source de `X-User` |
+| UC13 | S'authentifier | inscription, connexion, déconnexion ; jeton `Authorization: Bearer` (ADR 0011) |
 
 La réservation et l'annulation sont deux cas d'utilisation distincts : UC3 retient la place, UC5 la libère.
 

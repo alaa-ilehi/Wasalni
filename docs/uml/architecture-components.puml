@@ -11,8 +11,8 @@ package "cmd/wasalni" {
 }
 
 package "internal/api" {
-  [Routes\n12 routes HTTP\n(profil, trajets, réservations, notes)] as Routes
-  [identité\nen-tête X-User] as Identite
+  [Routes\n15 routes HTTP\n(health, auth, profil, trajets, réservations, notes)] as Routes
+  [authentification\njeton Bearer] as Identite
   [statutHTTP\ntable erreur -> code HTTP] as Statut
 }
 
@@ -26,6 +26,7 @@ package "internal/application" {
   [ConsulterTrajet\n(UC7)] as ConsulterTrajet
   [GererTrajet\n(UC9)] as GererTrajet
   [TerminerTrajet\n(UC11)] as TerminerTrajet
+  [Authentification\n(UC13) inscription, connexion, jetons] as Authentification
   interface "NormaliseurPhoto" as INormaliseur
   interface "Horloge" as IHorloge
   interface "Notificateur" as INotificateur
@@ -45,6 +46,9 @@ package "internal/domain" {
   interface "TrajetGestionRepository" as IGestion
   interface "ReservationRepository" as IReservation
   interface "EvaluationRepository" as IEvaluation
+  interface "CredentialRepository" as ICredential
+  interface "SessionRepository" as ISession
+  interface "HacheurMotDePasse" as IHacheur
 }
 
 package "internal/infrastructure/sqlite" {
@@ -52,7 +56,13 @@ package "internal/infrastructure/sqlite" {
   [TrajetRepository\n(adaptateur SQLite)] as SqlTrajet
   [ReservationRepository\n(adaptateur SQLite)] as SqlReservation
   [EvaluationRepository\n(adaptateur SQLite)] as SqlEvaluation
+  [CredentialRepository\n(adaptateur SQLite)] as SqlCredential
+  [SessionRepository\n(adaptateur SQLite)] as SqlSession
   [Ouverture\npragmas + schéma idempotent] as Ouverture
+}
+
+package "internal/infrastructure/passwords" {
+  [Hacheur\nPBKDF2-HMAC-SHA256, sel par compte] as Passwords
 }
 
 package "internal/infrastructure/photos" {
@@ -63,14 +73,13 @@ package "internal/infrastructure/notifications" {
   [Journal\nréservation, annulation,\nfin, modification, suppression] as Journal
 }
 
-database "SQLite\n(tables users, rides, bookings, ratings)" as DB
-cloud "Système d'authentification\n(externe)" as ExternalAuth
+database "SQLite\n(tables users, rides, bookings, ratings,\ncredentials, sessions)" as DB
 cloud "Système de notification\n(externe, non branché)" as ExternalNotif
 
-Client --> Routes : HTTP + en-tête X-User
-ExternalAuth ..> Client : identité
+Client --> Routes : HTTP + Authorization: Bearer
 
-Routes --> Identite : lit l'identité
+Routes --> Identite : résout le jeton
+Routes --> Authentification : inscription, connexion, déconnexion
 Routes --> GererProfil : Consulter / Enregistrer
 Routes --> PublierTrajet : Executer
 Routes --> RechercherTrajets : Executer
@@ -139,6 +148,15 @@ SqlProfil --> DB : lecture / upsert transactionnel
 SqlTrajet --> DB : insertion, recherche, transition d'état
 SqlReservation --> DB : décrément et restitution atomiques de la place
 SqlEvaluation --> DB : insertion sous index unique, moyenne
+SqlCredential --> DB : insertion, lecture du condensé
+SqlSession --> DB : jeton haché, purge paresseuse des sessions échues
+Passwords ..|> IHacheur : implémente
+Authentification --> ICredential : dépend
+Authentification --> ISession : dépend
+Authentification --> IHacheur : dépend
+SqlCredential ..|> ICredential : implémente
+SqlSession ..|> ISession : implémente
+Main --> Authentification : instancie
 SqlProfil ..> Ouverture : base ouverte et schéma appliqué
 
 Journal ..> ExternalNotif : appel prévu (UC12)
