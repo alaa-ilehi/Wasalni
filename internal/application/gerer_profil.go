@@ -17,6 +17,11 @@ var ErrIdentiteManquante = errors.New("identité manquante")
 // Elle traduit l'erreur du port de normalisation pour que l'interface n'ait pas à connaître l'infrastructure.
 var ErrPhotoInvalide = errors.New("photo invalide")
 
+// ErrImageTropGrande : la photo déclare plus de pixels que le budget (ADR 0008). Distincte d'ErrPhotoInvalide pour que
+// le client sache que le refus vient de la taille et non d'un fichier illisible ; l'adaptateur de `cmd/wasalni` la pose
+// en traduisant `photos.ErrImageTropGrande`, application n'importe pas l'infrastructure.
+var ErrImageTropGrande = errors.New("photo trop grande")
+
 // NormaliseurPhoto : port de traitement d'image (décodage, réduction, encodage).
 type NormaliseurPhoto interface {
 	Normaliser(photoBase64 string) (string, error)
@@ -74,7 +79,8 @@ func (g GererProfil) Enregistrer(ctx context.Context, identifiant string, saisie
 		} else {
 			normalisee, err := g.photos.Normaliser(*saisie.Photo)
 			if err != nil {
-				return domain.Profil{}, false, fmt.Errorf("%w : %v", ErrPhotoInvalide, err)
+				// Deux %w : l'API garde ErrPhotoInvalide (400) et peut distinguer ErrImageTropGrande.
+				return domain.Profil{}, false, fmt.Errorf("%w : %w", ErrPhotoInvalide, err)
 			}
 			profil.Photo = normalisee
 		}

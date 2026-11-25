@@ -27,5 +27,5 @@ Séquence : [uml/uc11-sequence.puml](uml/uc11-sequence.puml). Modèle de classes
 
 - La transition est définitive et irréversible; aucun statut de réservation n'est modifié.
 - Une comparaison conditionnelle et une transaction empêchent une seconde transition sous appels concurrents.
-- L'événement est journalisé après commit; la livraison aux passagers dépend du système externe UC12 (ADR 0007).
+- L'événement part après commit, au mieux : `POST` JSON vers le notificateur configuré, journal sinon (ADR 0007, ADR 0013).
 - Tests domaine/application/SQLite/HTTP couvrent propriété, état, idempotence négative, concurrence, codes HTTP et échec de notification.

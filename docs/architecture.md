@@ -227,7 +227,7 @@ Source : [uml/uc3-sequence.puml](uml/uc3-sequence.puml). Le diagramme décrit le
 
 `DELETE /bookings/{id}` vérifie l'identité, le propriétaire, l'état `ACTIVE` et l'échéance `departure - X`. Le dépôt
 annule et rend la place dans la même transaction immédiate. L'événement d'annulation est journalisé au mieux après le
-commit ; l'adaptateur ne réalise pas la livraison aux parties, qui relève du système externe UC12 (ADR 0007).
+commit et livré par le notificateur (webhook si `WASALNI_NOTIFICATION_URL` est définie, journal sinon — ADR 0013).
 ![Séquence UC5](uml/uc5-sequence.png)
 
 Source : [uml/uc5-sequence.puml](uml/uc5-sequence.puml) et fiche [UC5](uc5-cancel-booking.md).
@@ -451,7 +451,7 @@ correspondance est la responsabilité de l'adaptateur (`internal/api/http.go`, A
 | `domain.ErrConducteurNePeutPasReserver` | cas d'usage `ReserverPlace` | 400 |
 | `domain.ErrTrajetInvalide` | domaine (`Trajet.Valider`, `Reservation.Valider`) | 400 |
 | `domain.ErrCurseurInvalide` | domaine, rendue par l'adaptateur SQLite sur un curseur `after` illisible ou mal formé | 400 |
-| `application.ErrImageTropGrande` | application (traduit `photos.ErrImageTropGrande` : budget de pixels dépassé) | 400 |
+| `application.ErrImageTropGrande` | adaptateur de `cmd/wasalni`, qui traduit `photos.ErrImageTropGrande` (budget de pixels) à la frontière des couches | 400 |
 | corps JSON invalide ou champ inconnu | adaptateur HTTP | 400 |
 | corps supérieur à 10 Mio | adaptateur HTTP (`http.MaxBytesReader`) | 413 |
 | toute autre erreur | infrastructure | 500, journalisée, message générique |
@@ -506,6 +506,9 @@ La table est unique : la fonction `statutHTTP` de `internal/api/http.go`. Le cor
   `bytes.Buffer` et vérifie, pour chacune des cinq notifications, le niveau, le message et les attributs, plus le repli
   de `NouveauJournal(nil)` ; des assertions de conformité lient `Journal` et `Webhook` aux quatre ports, donc un port
   modifié casse la compilation.
+- **Test du budget de pixels** : `gerer_profil_test.go` vérifie qu'une photo refusée pour sa taille garde
+  `application.ErrImageTropGrande` reconnaissable derrière `ErrPhotoInvalide` (emballage à deux `%w`), donc le client
+  apprend que le refus vient de la taille et non d'un fichier illisible.
 - **Tests du webhook** : `webhook_test.go` capture chaque `POST` sur un récepteur `httptest` (méthode, `Content-Type`,
   corps JSON exact pour les cinq événements), vérifie qu'un `500` et une cible injoignable rendent une erreur, et qu'une
   cible qui ne répond pas échoue au délai du client au lieu de bloquer.
@@ -576,8 +579,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JE
 - **Pic mémoire au plafond du budget.** Les 24 Mpx de `PixelsMax` bornent le pire cas mais l'autorisent : une image à ce
   plafond occupe environ 96 Mo en RGBA le temps de la réduction. À revoir si le service passe à plusieurs instances ou à
   un budget par lot.
-- **Onze UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9, UC10, UC11 et UC13 ont du code et des tests ; UC12 reste
-  partiel (journal au lieu d'un système de notification).
+- **Douze UC couverts.** UC8, UC1, UC2, UC7, UC3, UC5, UC6, UC9, UC10, UC11, UC12 et UC13 ont du code et des tests ;
+  UC12 livre ses événements par webhook (journal en repli), sans garantie de livraison (ADR 0013).
 
 ## 16. Décisions (ADR)
 

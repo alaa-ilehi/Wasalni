@@ -1,6 +1,6 @@
 # UC1 - Publier un trajet
 
-- **Acteur principal :** Conducteur. **Acteur secondaire :** Système de notification (UC12, prévu mais non branché sur la publication dans la version livrée).
+- **Acteur principal :** Conducteur. **Acteur secondaire :** Système de notification (UC12, livré par webhook depuis la publication).
 - **Préconditions :** l'utilisateur est identifié par un jeton de session (`Authorization: Bearer …`) ; il agit comme conducteur.
 - **Postconditions (succès) :** le trajet existe avec `PUBLISHED`, autant de places disponibles que de places totales, et le délai d'annulation `X` stocké sur le trajet ; le conducteur en est le propriétaire.
 
