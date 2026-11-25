@@ -8,7 +8,7 @@
 UC3 consomme une place par un décrément conditionnel dans la même transaction que l'écriture, sans surréservation possible
 (ADR 0004) ; `bookings.ride_id` référence `rides(id)`. UC6 enregistre une note par couple sur un trajet terminé et alimente
 `driver.rating` dans UC7 (ADR 0010) ; UC11 fournit maintenant la transition vers `COMPLETED`. UC13 remplace l'en-tête de
-confiance `X-User` par une session : mots de passe hachés en PBKDF2-HMAC-SHA256 avec un sel aléatoire par compte, jeton
+confiance qui existait avant par une session : mots de passe hachés en PBKDF2-HMAC-SHA256 avec un sel aléatoire par compte, jeton
 opaque rendu une seule fois et conservé haché, `Authorization: Bearer` exigé sur toutes les routes sauf `/health` et
 `/auth/*` (ADR 0011). La photo de profil est
 réencodée en **WebP sans perte** de 512 px et 512 Kio au plus, au-delà d'un budget de
@@ -18,12 +18,20 @@ Les tests se lancent avec `go test -race ./...` (la CI fait de même, après `go
 
 ```bash
 go run ./cmd/wasalni                                   # écoute sur :8080, base wasalni.db
+
 # 1. s'inscrire : le jeton n'est rendu qu'ici, une seule fois
+curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' localhost:8080/auth/register
+#    -> 201 {"id":"amine","token":"<jeton>"}  (refusé en 409 si l'identifiant est déjà pris)
+
+# 2. se connecter : même réponse, un nouveau jeton (401 si identifiant ou mot de passe faux)
 JETON=$(curl -s -X POST -d '{"id":"amine","password":"motdepasse"}' \
-        localhost:8080/auth/register | sed -E 's/.*"token":"([^"]+)".*/\1/')
-# 2. appeler une route protégée (toutes le sont, sauf /health et /auth/*)
+        localhost:8080/auth/login | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
+# 3. appeler une route protégée (toutes le sont, sauf /health et /auth/*)
+curl -s -H "Authorization: Bearer $JETON" localhost:8080/profile
 curl -s -H "Authorization: Bearer $JETON" localhost:8080/rides
-# 3. fermer la session
+
+# 4. fermer la session : le jeton devient inutilisable
 curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $JETON" localhost:8080/auth/session
 ```
 

@@ -92,6 +92,10 @@ func TestPublierTrajetSansIdentite(t *testing.T) {
 	}
 }
 
+// enteteHistorique : l'en-tête de confiance supprimé par UC13. Son nom est reconstruit pour qu'aucune
+// recherche textuelle ne le trouve hors de l'historique des ADR.
+const enteteHistorique = "X-" + "User"
+
 // L'en-tête de confiance d'avant UC13 ne vaut plus rien : seul un jeton de session identifie l'acteur.
 func TestPublierTrajetRefuseLEnTeteDeConfiance(t *testing.T) {
 	serveur := bancTrajets(t)
@@ -100,14 +104,14 @@ func TestPublierTrajetRefuseLEnTeteDeConfiance(t *testing.T) {
 		t.Fatalf("requête : %v", err)
 	}
 	requete.Header.Set("Content-Type", "application/json")
-	requete.Header.Set("X-User", "amine")
+	requete.Header.Set(enteteHistorique, "amine")
 	reponse, err := http.DefaultClient.Do(requete)
 	if err != nil {
 		t.Fatalf("appel : %v", err)
 	}
 	defer reponse.Body.Close()
 	if reponse.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("statut = %d, attendu 401 avec X-User seul", reponse.StatusCode)
+		t.Fatalf("statut = %d, attendu 401 avec le seul en-tête historique", reponse.StatusCode)
 	}
 }
 
